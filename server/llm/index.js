@@ -4,8 +4,10 @@ import { LlmHttpError, listOpenAIModels, streamOpenAI } from './openai.js';
 // Output ceilings per action for Claude (thinking counts toward max_tokens).
 const MAX_TOKENS = { translate: 16000, explain: 16000, ask: 16000, chat: 32000, test: 2048 };
 
-export function streamChat({ llm, system, messages, action, signal }, emit) {
-  const opts = { llm, system, messages, action, signal, maxTokens: MAX_TOKENS[action] || 16000 };
+// `system` is a string, or (book threads) an array of text blocks; `textOnlyReplay` drops the
+// thinking blocks of earlier answers.
+export function streamChat({ llm, system, messages, action, signal, textOnlyReplay = false }, emit) {
+  const opts = { llm, system, messages, action, signal, textOnlyReplay, maxTokens: MAX_TOKENS[action] || 16000 };
   return llm.protocol === 'anthropic' ? streamAnthropic(opts, emit) : streamOpenAI(opts, emit);
 }
 

@@ -1,13 +1,20 @@
 // Reflowable reading view for arXiv's HTML rendering (LaTeXML output).
 import DOMPurify from '/vendor/dompurify/purify.es.mjs';
+import { isTranslation } from './anchors.js';
 import { api } from './api.js';
+import { columnPages } from './columns.js';
+import { langs } from './langs.js';
 import { h, local } from './ui.js';
 import { normalizeText } from './selection.js';
 import { t } from './i18n.js';
+import { texBody } from './tex.js';
 
 const DROP =
   'script, style, link, meta, iframe, frame, object, embed, form, input, button, textarea, select, noscript, template, ' +
   '.ltx_page_logo, .ltx_page_navbar, .ltx_page_footer, .ltx_TOC, .ltx_ERROR';
+// A picture of a scanned book names its file (server/book.js); the same in server/papers.js.
+// (o…: cut from the original of a translated chapter)
+const FIGURE = /^(p\d{1,4}|o\d{1,4})-\d{1,2}\.png$/;
 
 // Papers are author-supplied content. A separate DOMPurify instance, because the
 // markdown renderer adds hooks to the shared one.
@@ -18,7 +25,8 @@ const PURIFY = {
   // TikZ pictures keep their labels (often with math) as HTML inside foreignObject. Allowing
   // that is safe here: the tree is cleaned in place and cloned, never serialized and parsed
   // again, which is where namespace tricks would bite.
-  ADD_TAGS: ['foreignObject'],
+  // k-tex: a formula of a book written with LaTeX, its text the LaTeX (tex.js draws it).
+  ADD_TAGS: ['foreignObject', 'k-tex'],
   HTML_INTEGRATION_POINTS: { 'annotation-xml': true, foreignobject: true },
   // alttext holds each formula's LaTeX.
   ADD_ATTR: ['alttext'],
@@ -26,6 +34,17 @@ const PURIFY = {
 
 function nodeEl(node) {
   return node?.nodeType === 1 ? node : node?.parentElement || null;
+}
+
+// A copy of `range` that takes in whole a formula it starts or ends inside: what a selection is
+// read as, and in a book anchored as (reader.js).
+export function wholeFormulas(range) {
+  const r = range.cloneRange();
+  const startMath = nodeEl(r.startContainer)?.closest('math, k-tex');
+  if (startMath) r.setStartBefore(startMath);
+  const endMath = nodeEl(r.endContainer)?.closest('math, k-tex');
+  if (endMath) r.setEndAfter(endMath);
+  return r;
 }
 
 function texOf(mathEl) {
@@ -121,6 +140,16 @@ function sanitize(root, baseUrl, paperId) {
       }
     }
     if (el.localName === 'img') {
+      // A scanned book's picture gets its src only here: one in paper.html would have gone to the
+      // arXiv asset proxy above.
+      if (el.hasAttribute('data-fig')) {
+        const name = el.getAttribute('data-fig');
+        if (!FIGURE.test(name)) {
+          el.remove();
+          continue;
+        }
+        el.setAttribute('src', api.figureUrl(paperId, name));
+      }
       el.setAttribute('loading', 'lazy');
       el.setAttribute('decoding', 'async');
     }
@@ -136,9 +165,37 @@ export function prepareArticle(html, baseUrl, paperId) {
   return [...holder.childNodes].map((node) => document.importNode(node, true));
 }
 
+// A heading of a book written with LaTeX, for lists: its title as text (hidden marks left out, a
+// formula as its LaTeX), and, where it has formulas, a copy for the contents to draw them.
+function plainTitle(el) {
+  if (!el.querySelector('k-tex, .mk')) return normalizeText(el.textContent);
+  const copy = el.cloneNode(true);
+  copy.querySelectorAll('.mk').forEach((m) => m.remove());
+  copy.querySelectorAll('k-tex').forEach((k) => k.replaceWith(texBody(k.textContent).tex));
+  return normalizeText(copy.textContent);
+}
+
+function drawnTitle(el) {
+  if (!el.querySelector('k-tex')) return undefined;
+  const span = document.createElement('span');
+  for (const n of el.childNodes) span.append(n.cloneNode(true));
+  span.querySelectorAll('.mk').forEach((m) => m.remove());
+  return span;
+}
+
+// A chapter's tab: its number and title, a long title cut short.
+export function tabLabel(n, title, max = 24) {
+  const s = normalizeText(title);
+  const short = s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s;
+  // (a title with its own number, "2.7 Limits", "11:6 Rest" or "2장 함수의 극한", needs no
+  // other in front)
+  return /^(\d+[.:]\d+|\d+\s*장)\s/.test(s) ? short : `${n} ${short}`.trim();
+}
+
 export class HtmlView {
-  constructor({ paper, host, onScroll, onTap, onPeek, onJump, onImage }) {
-    Object.assign(this, { paper, host, onScroll, onTap, onPeek, onJump, onImage });
+  // onChapter(id): a book now shows another chapter.
+  constructor({ paper, host, onScroll, onTap, onPeek, onJump, onImage, onChapter }) {
+    Object.assign(this, { paper, host, onScroll, onTap, onPeek, onJump, onImage, onChapter });
     this.kind = 'html';
   }
 
@@ -146,7 +203,8 @@ export class HtmlView {
     const data = await api.getHtml(this.paper.id);
     this.source = data.source;
     this.scrollEl = h('div', { class: 'html-scroll' });
-    this.article = h('div', { class: 'html-article', lang: 'en' });
+    // (a book in its own language; an arXiv paper in English)
+    this.article = h('div', { class: 'html-article', lang: this.paper.kind === 'book' ? langs.src : 'en' });
     this.article.append(...prepareArticle(data.html, data.baseUrl, this.paper.id));
     // Author blocks are "Name<br>Affiliation<br>email": keep only the name in bold.
     this.article.querySelectorAll('.ltx_authors .ltx_personname').forEach((pn) => {
@@ -160,6 +218,17 @@ export class HtmlView {
     this.scrollEl.append(this.article);
     this.applyTypography();
     this.host.append(this.scrollEl);
+    this.setupChapters(saved);
+    // A journal article's two columns, read as pages (columns.js).
+    if (this.article.querySelector('.paper')) {
+      const keep = (fn) => {
+        const at = this.firstVisible();
+        fn();
+        if (at) this.scrollToEl(at.el, at.offset);
+      };
+      // (its formulas are drawn at once, tex.js)
+      this.columns = this.chapters.map((sec) => columnPages(sec, this.scrollEl, keep));
+    }
 
     this.ac = new AbortController();
     const signal = this.ac.signal;
@@ -202,24 +271,88 @@ export class HtmlView {
     return next;
   }
 
+  // A book of two or more chapters is read one chapter at a time, picked from a strip of tabs. The
+  // others stay in the DOM, hidden: annotations, anchors and translations work on them.
+  setupChapters(saved) {
+    this.chapters = [...this.article.querySelectorAll('section[data-chapter]')];
+    if (this.chapters.length < 2) return;
+    this.tabs = new Map(
+      this.chapters.map((sec, i) => {
+        const title = normalizeText(sec.querySelector(':scope > h2')?.textContent);
+        const tab = h('button', { class: 'chapter-tab', type: 'button', role: 'tab', title, onClick: () => this.openChapter(sec.dataset.chapter) }, h('span', { text: tabLabel(i + 1, title) }), h('span', { class: 'tab-mark' }));
+        return [sec.dataset.chapter, tab];
+      }),
+    );
+    this.tabStrip = h('div', { class: 'chapter-tabs', role: 'tablist', 'aria-label': t('reader.chapters') }, [...this.tabs.values()]);
+    // A tap here is not a tap on the text, which shows or hides the toolbar.
+    this.chapterNav = h('div', { class: 'chapter-nav', onClick: (e) => e.stopPropagation() });
+    this.scrollEl.prepend(this.tabStrip);
+    this.article.append(this.chapterNav);
+    const at = saved?.anchorId && this.article.querySelector(`[id="${CSS.escape(saved.anchorId)}"]`);
+    this.showChapter((at?.closest('section[data-chapter]') || this.chapters[0]).dataset.chapter);
+  }
+
+  // Shows chapter `id` of a book and hides the others. Every move in the book comes through here:
+  // the tabs, the buttons at the end of a chapter, and scrollToEl for everything else.
+  showChapter(id) {
+    if (!this.tabs?.has(id) || id === this.chapter) return;
+    const moved = !!this.chapter;
+    this.chapter = id;
+    const i = this.chapters.findIndex((sec) => sec.dataset.chapter === id);
+    this.chapters.forEach((sec, k) => (sec.hidden = k !== i));
+    for (const [c, tab] of this.tabs) {
+      tab.classList.toggle('on', c === id);
+      tab.setAttribute('aria-selected', String(c === id));
+    }
+    // Its tab to the middle of the strip (scrollIntoView would move the text as well).
+    const tab = this.tabs.get(id);
+    this.tabStrip.scrollLeft = tab.offsetLeft - (this.tabStrip.clientWidth - tab.offsetWidth) / 2;
+    const go = (k, cls, text) => this.chapters[k] && h('button', { class: `btn btn-secondary ${cls}`, type: 'button', text, onClick: () => this.openChapter(this.chapters[k].dataset.chapter) });
+    this.chapterNav.replaceChildren(...[go(i - 1, 'prev', t('reader.prevChapter')), go(i + 1, 'next', t('reader.nextChapter'))].filter(Boolean));
+    if (moved) this.onChapter?.(id);
+  }
+
+  // From its tab or the end of the chapter before or after: a chapter from its start.
+  openChapter(id) {
+    this.showChapter(id);
+    this.scrollEl.scrollTop = 0;
+  }
+
   topInset() {
     const bar = document.querySelector('.topbar');
-    return bar ? bar.getBoundingClientRect().height : 60;
+    // and a book's chapter tabs, under the bar
+    return (bar ? bar.getBoundingClientRect().height : 60) + (this.tabStrip?.offsetHeight || 0);
   }
 
   firstVisible() {
     const top = this.scrollEl.getBoundingClientRect().top + this.topInset();
-    const blocks = this.article.querySelectorAll('[id].ltx_para, [id].ltx_title, section[id], figure[id], [id].ltx_equation, li[id]');
+    // A book's translation (side by side, or in place of the text) stands for the block just before it.
+    const blocks = this.article.querySelectorAll('[id].ltx_para, [id].ltx_title, section[id], figure[id], [id].ltx_equation, li[id], .tr-block');
     for (const el of blocks) {
       const r = el.getBoundingClientRect();
-      if (r.bottom > top + 4) return { el, offset: r.top - top };
+      // A section that began above the screen (a whole book chapter, say) would anchor the
+      // position far away; something inside it keeps it across font sizes and screen widths.
+      if (r.bottom > top + 4 && !(el.localName === 'section' && r.top < top)) return { el: el.matches('.tr-block') ? el.previousElementSibling : el, offset: r.top - top, height: r.height };
     }
     return null;
   }
 
+  // Shows the chapter of `el` first. A block of a chapter read in the translation only is hidden: its translation,
+  // just after it, is on screen in its place. Returns what it scrolled to.
   scrollToEl(el, offset = 0) {
-    const elTop = el.getBoundingClientRect().top - this.scrollEl.getBoundingClientRect().top + this.scrollEl.scrollTop;
+    const chapter = el.closest('section[data-chapter]');
+    if (chapter) this.showChapter(chapter.dataset.chapter);
+    // (the next thing after it: out of a run of text of a journal article in columns at its end,
+    // into one at its start, columns.js)
+    const next = (n) => {
+      const s = n.nextElementSibling || (n.parentElement?.matches('.col-run') ? n.parentElement.nextElementSibling : null);
+      return s?.matches('.col-run') && s.firstElementChild ? s.firstElementChild : s;
+    };
+    let on = el;
+    while (!on.getClientRects().length && next(on)) on = next(on);
+    const elTop = on.getBoundingClientRect().top - this.scrollEl.getBoundingClientRect().top + this.scrollEl.scrollTop;
     this.scrollEl.scrollTop = elTop - this.topInset() - offset;
+    return on;
   }
 
   restore(saved) {
@@ -249,18 +382,22 @@ export class HtmlView {
 
   jumpTo(el) {
     const back = this.scrollEl.scrollTop;
-    this.scrollToEl(el, 8);
-    el.classList.remove('flash');
-    void el.offsetWidth;
-    el.classList.add('flash');
+    const chapter = this.chapter;
+    const shown = this.scrollToEl(el, 8);
+    shown.classList.remove('flash');
+    void shown.offsetWidth;
+    shown.classList.add('flash');
     this.onJump?.(() => {
+      this.showChapter(chapter);
       this.scrollEl.scrollTop = back;
     });
   }
 
+  // In a book, also a block's translation ("c3.5k", translation.js), or the block while that isn't there.
   goToLocation(loc) {
     if (!loc?.anchorId) return;
-    const el = this.article.querySelector(`[id="${CSS.escape(loc.anchorId)}"]`);
+    const at = (id) => this.article.querySelector(`[id="${CSS.escape(id)}"], [data-k="${CSS.escape(id)}"]`);
+    const el = at(loc.anchorId) || (isTranslation(loc.anchorId) && at(loc.anchorId.slice(0, -1)));
     if (el) this.jumpTo(el);
   }
 
@@ -327,11 +464,7 @@ export class HtmlView {
   describeSelection(sel) {
     const range = sel.getRangeAt(0);
     if (!this.article.contains(range.commonAncestorContainer)) return null;
-    const r = range.cloneRange();
-    const startMath = nodeEl(r.startContainer)?.closest('math');
-    if (startMath) r.setStartBefore(startMath);
-    const endMath = nodeEl(r.endContainer)?.closest('math');
-    if (endMath) r.setEndAfter(endMath);
+    const r = wholeFormulas(range);
     const text = textWithLatex(r.cloneContents());
     if (!text) return null;
     const startEl = nodeEl(r.startContainer);
@@ -386,12 +519,25 @@ export class HtmlView {
         const heading = sec.querySelector(':scope > .ltx_title');
         if (!heading) return;
         items.push({ title: normalizeText(heading.textContent), level: sec.classList.contains('ltx_subsection') ? 2 : 1, el: sec });
+        // A book chapter's own headings below it (a sermon's heads, say), but the one it opens with
+        // where that says its title again, and the Notes that end a chapter. (A journal article is
+        // one chapter: its title and its sections' heads stand beside its journal's line.)
+        if (!sec.dataset.chapter) return;
+        const key = (s) => normalizeText(s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+        // (a journal article in two columns has some in runs of text, columns.js)
+        const first = sec.querySelector(':scope > [data-b], :scope > .col-run > [data-b]');
+        for (const head of sec.querySelectorAll(':scope > h3[data-b], :scope > .col-run > h3[data-b]')) {
+          if (key(head.textContent) === 'notes') continue;
+          const level = head.matches('.r-title, .r-sec') ? 1 : 2;
+          if (head !== first || key(head.textContent) !== key(heading.textContent)) items.push({ title: plainTitle(head), level, el: head, label: drawnTitle(head) });
+        }
       });
     return items;
   }
 
   destroy() {
     this.ac?.abort();
+    this.columns?.forEach((c) => c.destroy());
     this.scrollEl?.remove();
   }
 }

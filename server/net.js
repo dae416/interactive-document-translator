@@ -11,7 +11,10 @@ const useProxy = proxyConfigured && env.PAPERGLOSS_NO_PROXY !== '1';
 // Loopback always bypasses the proxy so local model servers (Ollama, vLLM) keep working.
 const noProxy = [env.NO_PROXY || env.no_proxy || '', 'localhost', '127.0.0.1', '::1'].filter(Boolean).join(',');
 
-const dispatcher = useProxy ? new EnvHttpProxyAgent({ noProxy }) : new Agent();
+// A model at max effort can think for many minutes before it streams a word, longer than undici's
+// 5-minute limit between chunks. Remote fetches keep their own shorter timeouts (sources.js).
+const idle = { bodyTimeout: 30 * 60_000 };
+const dispatcher = useProxy ? new EnvHttpProxyAgent({ noProxy, ...idle }) : new Agent(idle);
 
 export function httpFetch(url, init = {}) {
   return undiciFetch(url, { ...init, dispatcher });

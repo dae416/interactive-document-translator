@@ -52,7 +52,12 @@ export const api = {
   listModels: (llm) => request('POST', '/api/llm/models', { llm }),
   testLlm: (llm) => request('POST', '/api/llm/test', { llm }),
   listPapers: () => request('GET', '/api/papers'),
-  importPaper: (input) => request('POST', '/api/papers/import', { input }),
+  // follow: how many "next" pages to fetch when the link is a web page that becomes a book.
+  importPaper: (input, follow = 0) => request('POST', '/api/papers/import', { input, follow }),
+  // What the AI found for a title, a description or a picture; a link it found, as a book.
+  findBooks: (query, image) => request('POST', '/api/books/find', { query, image }),
+  importBook: (book) => request('POST', '/api/books/import', book),
+  getPlaces: (id, blocks) => request('POST', `/api/papers/${enc(id)}/places`, { blocks }),
   getPaper: (id) => request('GET', `/api/papers/${enc(id)}`),
   patchPaper: (id, patch, opts) => request('PATCH', `/api/papers/${enc(id)}`, patch, opts),
   deletePaper: (id) => request('DELETE', `/api/papers/${enc(id)}`),
@@ -61,16 +66,31 @@ export const api = {
   getThread: (id, tid) => request('GET', `/api/papers/${enc(id)}/threads/${enc(tid)}`),
   saveThread: (id, thread) => request('PUT', `/api/papers/${enc(id)}/threads/${enc(thread.id)}`, thread),
   deleteThread: (id, tid) => request('DELETE', `/api/papers/${enc(id)}/threads/${enc(tid)}`),
+  getAnnotations: (id) => request('GET', `/api/papers/${enc(id)}/annotations`),
+  putAnnotations: (id, items) => request('PUT', `/api/papers/${enc(id)}/annotations`, { items }),
+  nextChapters: (id, count) => request('POST', `/api/papers/${enc(id)}/chapters/next`, { count }),
+  getTranslation: (id, chapter) => request('GET', `/api/papers/${enc(id)}/translations/${enc(chapter)}`),
+  // Where the translation's footnotes go in the original: { notes: { [n]: { b, at } } }.
+  getNotesSrc: (id, chapter) => request('GET', `/api/papers/${enc(id)}/translations/${enc(chapter)}/notes-src`),
+  // Which words of the translation each clause of the original is: { version, blocks: { [b]: { n, clauses } } }.
+  getClauses: (id, chapter) => request('GET', `/api/papers/${enc(id)}/translations/${enc(chapter)}/clauses`),
+  // Queues the chapter, or its part `part` (from 1) when it is in parts; again: also when it is
+  // ready or failed.
+  translateChapter: (id, chapter, { again = false, part = 0 } = {}) => request('POST', `/api/papers/${enc(id)}/translations/${enc(chapter)}`, { again, ...(part ? { part } : {}) }),
+  // Stops it: a queued chapter or part never starts, a running one stops at once (its done segments stay).
+  cancelTranslation: (id, chapter, part = 0) => request('POST', `/api/papers/${enc(id)}/translations/${enc(chapter)}/cancel`, part ? { part } : {}),
   pdfUrl: (id) => `/api/papers/${enc(id)}/pdf`,
   pdfDownloadUrl: (id) => `/api/papers/${enc(id)}/pdf?download=1`,
   assetUrl: (id, url) => `/api/papers/${enc(id)}/asset?u=${enc(url)}`,
+  // A picture of a scanned book, "p<page>-<k>.png".
+  figureUrl: (id, name) => `/api/papers/${enc(id)}/figures/${enc(name)}`,
 };
 
 export function uploadPaper(file, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/papers/upload');
-    xhr.setRequestHeader('Content-Type', 'application/pdf');
+    xhr.setRequestHeader('Content-Type', /\.txt$/i.test(file.name || '') || file.type === 'text/plain' ? 'text/plain' : 'application/pdf');
     xhr.setRequestHeader('X-File-Name', enc(file.name || 'paper.pdf'));
     xhr.setRequestHeader('X-UI-Lang', getLang());
     xhr.upload.onprogress = (e) => {
@@ -95,13 +115,15 @@ export function uploadPaper(file, onProgress) {
 }
 
 // Streams one model turn. Events: start, thinking, delta, notice, done, refusal, error.
-export async function streamChat({ action, system, messages }, { signal, onEvent }) {
+// book: { id, chapter } makes the server build the context; fresh skips its stored lookups;
+// model ('haiku' | 'sonnet' | 'opus') skips its automatic model choice.
+export async function streamChat({ action, system, messages, book, fresh, model }, { signal, onEvent }) {
   let res;
   try {
     res = await fetch('/api/llm/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-UI-Lang': getLang() },
-      body: JSON.stringify({ action, system, messages }),
+      body: JSON.stringify({ action, system, messages, book: book || undefined, fresh: fresh || undefined, model: model || undefined }),
       credentials: 'same-origin',
       signal,
     });

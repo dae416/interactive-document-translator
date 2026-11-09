@@ -1,7 +1,6 @@
 import { api } from './api.js';
-import { icon } from './icons.js';
 import { getLang, setLang, t } from './i18n.js';
-import { h } from './ui.js';
+import { appLogo, h } from './ui.js';
 
 export function renderLogin(root, onSuccess) {
   const input = h('input', { class: 'input', type: 'password', placeholder: t('login.password'), autocomplete: 'current-password', 'aria-label': t('login.password') });
@@ -18,7 +17,7 @@ export function renderLogin(root, onSuccess) {
     h(
       'div',
       { class: 'login-top' },
-      h('div', { class: 'brand' }, h('span', { class: 'brand-mark', html: icon('book') }), h('span', { text: t('app.name') })),
+      h('div', { class: 'brand' }, appLogo(), h('span', { text: t('app.name') })),
       langBtn,
     ),
     h('h1', { text: t('login.title') }),

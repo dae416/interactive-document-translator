@@ -7,6 +7,7 @@ import { privateAddressIn, publicFetch } from './net.js';
 
 const MAX_PDF_BYTES = 150 * 1024 * 1024;
 const MAX_ASSET_BYTES = 30 * 1024 * 1024;
+const MAX_HTML_BYTES = 8 * 1024 * 1024;
 
 const NEW_ID_RE = /(\d{4}\.\d{4,5})(v\d+)?/;
 const OLD_ID_RE = /([a-z][a-z-]*(?:\.[a-z]{2})?\/\d{7})(v\d+)?/i;
@@ -27,6 +28,7 @@ function arxivFromPath(p) {
 export function parseInput(raw) {
   const input = String(raw || '').trim();
   if (!input) throw new HttpError(400, 'import.empty');
+  if (input.length > 2048) throw new HttpError(400, 'import.unrecognized');
 
   const bare = input.replace(/^arxiv\s*:\s*/i, '');
   let m = bare.match(/^(\d{4}\.\d{4,5})(v\d+)?$/);
@@ -86,7 +88,7 @@ export function parseInput(raw) {
 
 // Links here come from users and from the pages they point to, so everything goes through
 // publicFetch, which refuses local and private addresses (also after redirects).
-async function fetchRemote(url, { timeoutMs = 30000, accept } = {}) {
+export async function fetchRemote(url, { timeoutMs = 30000, accept } = {}) {
   let res;
   try {
     res = await publicFetch(url, {
@@ -140,6 +142,33 @@ async function readLimitedText(res, maxBytes) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+// An HTML page in its declared charset (Content-Type, else <meta charset>), UTF-8 otherwise.
+// Reading stops after 8 MB; `truncated` says so.
+async function readHtmlPage(res) {
+  const chunks = [];
+  let size = 0;
+  let truncated = false;
+  for await (const chunk of res.body) {
+    size += chunk.length;
+    if (size > MAX_HTML_BYTES) {
+      truncated = true;
+      break;
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  const buf = Buffer.concat(chunks);
+  const label =
+    /charset\s*=\s*["']?([\w-]+)/i.exec(res.headers.get('content-type') || '')?.[1] ||
+    /<meta[^>]+charset\s*=\s*["']?([\w-]+)/i.exec(buf.subarray(0, 4096).toString('latin1'))?.[1];
+  let html;
+  try {
+    html = new TextDecoder(label || 'utf-8').decode(buf);
+  } catch {
+    html = new TextDecoder('utf-8').decode(buf);
+  }
+  return { html, truncated };
+}
+
 // Streams a response body to `file`, enforcing the size limit and checking the PDF signature.
 async function saveResponseAsPdf(res, file) {
   const declared = Number(res.headers.get('content-length') || 0);
@@ -187,9 +216,23 @@ function attrsOf(tag) {
   return out;
 }
 
+// The page's <meta> tags, read along once: a regex for them takes minutes on a page of "<meta " with
+// no ">", on the thread everything else waits for.
+function metaTagsOf(html) {
+  const out = [];
+  const open = /<meta\s/gi;
+  for (let m; out.length < 2000 && (m = open.exec(html)); ) {
+    const end = html.indexOf('>', m.index);
+    if (end < 0) break;
+    out.push(html.slice(m.index, end + 1));
+    open.lastIndex = end + 1;
+  }
+  return out;
+}
+
 function parseMetaTags(html) {
   const out = new Map();
-  for (const tag of (html.match(/<meta\s[^>]*>/gi) || []).slice(0, 2000)) {
+  for (const tag of metaTagsOf(html)) {
     const attrs = attrsOf(tag);
     const name = (attrs.name || attrs.property || '').toLowerCase();
     const content = attrs.content;
@@ -223,7 +266,8 @@ export function downloadPdfFromUrl(url, file) {
 }
 
 async function downloadPdfOnce(url, file) {
-  let res = await fetchRemote(url, { timeoutMs: 60000, accept: 'application/pdf,text/html;q=0.9,*/*;q=0.8' });
+  // (the limit runs through the whole download: a large scan on a slow server takes minutes)
+  let res = await fetchRemote(url, { timeoutMs: 300000, accept: 'application/pdf,text/html;q=0.9,*/*;q=0.8' });
   if (!res.ok) throw refusedError(url, res.status);
   let meta = {};
   if (!looksLikePdf(res)) {
@@ -233,18 +277,34 @@ async function downloadPdfOnce(url, file) {
       const saved = await saveResponseAsPdf(res, file);
       return { ...saved, finalUrl: res.url, meta };
     }
-    const html = await readLimitedText(res, 3 * 1024 * 1024);
-    meta = metaFromHtml(html);
+    const page = await readHtmlPage(res);
+    meta = metaFromHtml(page.html);
     if (!meta.pdfUrl) {
       if (new URL(res.url).hostname.endsWith('openreview.net')) throw refusedError(res.url, 403);
-      throw new HttpError(422, 'dl.noPdfLink');
+      if (page.truncated) throw new HttpError(413, 'dl.pageTooLarge');
+      // The caller turns the page itself into a web book.
+      const err = new HttpError(422, 'dl.noPdfLink');
+      err.page = { html: page.html, url: res.url };
+      throw err;
     }
     const pdfUrl = new URL(meta.pdfUrl, res.url).toString();
-    res = await fetchRemote(pdfUrl, { timeoutMs: 60000, accept: 'application/pdf,*/*;q=0.8' });
+    res = await fetchRemote(pdfUrl, { timeoutMs: 300000, accept: 'application/pdf,*/*;q=0.8' });
     if (!res.ok) throw refusedError(pdfUrl, res.status);
   }
   const saved = await saveResponseAsPdf(res, file);
   return { ...saved, finalUrl: res.url, meta };
+}
+
+// One HTML page of a web book.
+export async function fetchPage(url) {
+  const res = await withRetry(() => fetchRemote(url, { timeoutMs: 45000, accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5' }));
+  if (!res.ok) {
+    await res.body?.cancel();
+    throw refusedError(url, res.status);
+  }
+  const page = await readHtmlPage(res);
+  if (page.truncated) throw new HttpError(413, 'dl.pageTooLarge');
+  return { html: page.html, url: res.url };
 }
 
 export async function fetchArxivMeta(id, version = '') {

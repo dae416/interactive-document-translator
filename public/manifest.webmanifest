@@ -1,6 +1,6 @@
 {
-  "name": "PaperGloss",
-  "short_name": "PaperGloss",
+  "name": "{{APP_NAME}}",
+  "short_name": "{{APP_NAME}}",
   "description": "A web-based, AI-powered paper reader built for mobile",
   "start_url": "/",
   "scope": "/",
@@ -9,17 +9,17 @@
   "theme_color": "#3355e6",
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "/icons/{{APP_ICON}}-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "/icons/{{APP_ICON}}-512.png",
       "sizes": "512x512",
       "type": "image/png"
     },
     {
-      "src": "/icons/icon.svg",
+      "src": "/icons/{{APP_ICON}}.svg",
       "sizes": "any",
       "type": "image/svg+xml"
     }

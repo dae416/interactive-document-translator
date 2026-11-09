@@ -1,8 +1,11 @@
-import { api, getSettings } from './api.js';
+import { api, cachedSettings, getSettings } from './api.js';
 import {
+  bookMessage,
   buildSystem,
+  canAskOpus,
   followUpText,
   imageMessage,
+  modelLabel,
   newThread,
   quoteMessage,
   runTurn,
@@ -14,7 +17,10 @@ import { confirmDialog, copyText, h, iconButton, isWide, timeAgo, toast } from '
 // `t` is used for threads throughout this file, so the translator is `tr`.
 import { formatLocation, t as tr } from './i18n.js';
 
-const KIND_ICON = { translate: 'translate', explain: 'bulb', ask: 'message', chat: 'sparkles', image: 'scan' };
+const KIND_ICON = { translate: 'translate', explain: 'bulb', ask: 'message', chat: 'sparkles', image: 'scan', gap: 'sparkles' };
+// What the "Fill the gap" chip asks about a passage; the answer can then go into the text as a note.
+const GAP_QUESTION =
+  'What does a reader need at this point to follow the text smoothly? Fill in the background knowledge it assumes and any step of the argument left out between this passage and what comes before and after it. Write it as a short note (3–6 sentences) that could stand right after this passage in the text.';
 
 // Markdown/LaTeX markers are noise in one-line previews.
 function plainText(md = '') {
@@ -29,8 +35,12 @@ const HEIGHTS = [0.45, 0.62, 0.92];
 
 export class AiPanel {
   // host: the reader root. getView(): current PdfView/HtmlView.
-  constructor({ paper, host, getView, onOpenChange, onHeightChange, openSettings, jumpTo }) {
-    Object.assign(this, { paper, host, getView, onOpenChange, onHeightChange, openSettings, jumpTo });
+  // getChapter(), getBlock(): in a book, the chapter and the block being read, for threads that
+  // don't come with them.
+  // onNote(quote, text): an answer about a passage of a book goes into the text after it.
+  constructor({ paper, host, getView, getChapter, getBlock, onOpenChange, onHeightChange, openSettings, jumpTo, onNote }) {
+    Object.assign(this, { paper, host, getView, getChapter, getBlock, onOpenChange, onHeightChange, openSettings, jumpTo, onNote });
+    this.isBook = paper.kind === 'book';
     this.thread = null;
     this.view = 'history';
     this.isOpen = false;
@@ -43,7 +53,7 @@ export class AiPanel {
   build() {
     this.titleEl = h('div', { class: 'title' });
     this.historyBtn = iconButton('clock', { title: tr('reader.history'), onClick: () => this.showHistory() });
-    this.newChatBtn = iconButton('sparkles', { title: tr('reader.askPaper'), onClick: () => this.startChat() });
+    this.newChatBtn = iconButton('sparkles', { title: tr(this.isBook ? 'reader.askBook' : 'reader.askPaper'), onClick: () => this.startChat() });
     this.closeBtn = iconButton('close', { title: tr('common.close'), onClick: () => this.close() });
     this.handle = h('div', { class: 'sheet-handle', 'aria-hidden': 'true' });
     this.head = h('div', { class: 'ai-head' }, this.titleEl, this.newChatBtn, this.historyBtn, this.closeBtn);
@@ -185,12 +195,24 @@ export class AiPanel {
     return (await getSettings()).prefs;
   }
 
+  // (with the block it is about, or the one being read: of a long chapter of sections the server
+  // sends the model only that block's section, server/context.js)
+  bookFor(info) {
+    return this.isBook ? { id: this.paper.id, chapter: info?.chapter || this.getChapter(), block: info?.location?.anchorId || this.getBlock?.() } : null;
+  }
+
   async startQuote(action, info) {
     if (this.controller) this.stop();
     const prefs = await this.prefs();
     const context = info.getContext ? await info.getContext().catch(() => '') : info.context || '';
     const quote = { text: info.text, context, location: info.location || null };
-    this.thread = newThread({ paper: this.paper, kind: 'quote', action, quote, system: buildSystem(this.paper, prefs) });
+    if (info.inTranslation) quote.inTranslation = true;
+    // (in a chapter written in the reader's language, or translated from a scan: nothing to translate)
+    if (info.inTarget || info.orig) quote.inTarget = true;
+    // (where a note made from the answers goes)
+    if (info.anchor) quote.anchor = { chapter: info.anchor.chapter, start: info.anchor.start, end: info.anchor.end };
+    const book = this.bookFor(info);
+    this.thread = newThread({ paper: this.paper, kind: 'quote', action, quote, system: book ? '' : buildSystem(this.paper, prefs), book });
     this.view = 'thread';
     this.open();
     if (action === 'ask') {
@@ -200,7 +222,7 @@ export class AiPanel {
       return;
     }
     this.render();
-    await this.send({ action, content: quoteMessage(action, quote, prefs), isAction: true });
+    await this.send({ action, content: book ? bookMessage(action, quote) : quoteMessage(action, quote, prefs), isAction: true });
   }
 
   async startImage(action, image) {
@@ -229,13 +251,15 @@ export class AiPanel {
   async startChat() {
     if (this.controller) this.stop();
     const prefs = await this.prefs();
-    this.thread = newThread({ paper: this.paper, kind: 'chat', action: 'chat', quote: null, system: '' });
+    // In a book the server sends the context: brief, chapter summaries, the chapter being read.
+    const book = this.bookFor(null);
+    this.thread = newThread({ paper: this.paper, kind: 'chat', action: 'chat', quote: null, system: '', book });
     this.view = 'thread';
     this.open();
     this.render();
-    this.input.placeholder = tr('ai.askPaper');
+    this.input.placeholder = tr(book ? 'ai.askBook' : 'ai.askPaper');
     if (isWide()) this.input.focus();
-    this.thread.pendingFullText = this.loadFullText(prefs);
+    if (!book) this.thread.pendingFullText = this.loadFullText(prefs);
   }
 
   // A conversation started elsewhere (the translate-on-select popup) continues here.
@@ -270,9 +294,13 @@ export class AiPanel {
     const t = this.thread;
     const first = !t.messages.length;
     if (t.kind === 'quote' && first) {
-      await this.send({ action: 'ask', content: quoteMessage('ask', t.quote, prefs, text), display: text });
+      const content = t.book ? bookMessage('ask', t.quote, text) : quoteMessage('ask', t.quote, prefs, text);
+      await this.send({ action: 'ask', content, display: text });
     } else if (t.kind === 'image' && first) {
       await this.send({ action: 'ask', content: imageMessage('ask', t.quote, prefs, text), display: text });
+    } else if (t.kind === 'chat' && first && t.book) {
+      t.title = text.slice(0, 60);
+      await this.send({ action: 'chat', content: text, display: text });
     } else if (t.kind === 'chat' && first) {
       const full = await (t.pendingFullText || this.loadFullText(prefs));
       delete t.pendingFullText;
@@ -289,14 +317,26 @@ export class AiPanel {
     const t = this.thread;
     if (!t || this.controller) return;
     const prefs = await this.prefs();
+    if (action === 'gap') {
+      // A question like any other, so its follow-ups and its answer as a note work the same way.
+      let content = GAP_QUESTION;
+      if (t.book) content = bookMessage('ask', t.messages.length ? { text: t.quote.text, inTranslation: t.quote.inTranslation } : t.quote, GAP_QUESTION);
+      else if (!t.messages.length) content = quoteMessage('ask', t.quote, prefs, GAP_QUESTION);
+      await this.send({ action: 'ask', content, display: tr('ai.gapAsked') });
+      return;
+    }
     if (!t.messages.length) {
       // A thread opened with "ask" but no question yet: run the action as its first turn.
-      const content = t.kind === 'image' ? imageMessage(action, t.quote, prefs) : quoteMessage(action, t.quote, prefs);
+      let content = quoteMessage(action, t.quote, prefs);
+      if (t.kind === 'image') content = imageMessage(action, t.quote, prefs);
+      else if (t.book) content = bookMessage(action, t.quote);
       t.action = action;
       await this.send({ action, content, isAction: true });
       return;
     }
-    await this.send({ action, content: followUpText(action, prefs, t.kind === 'image'), isAction: true });
+    // A book follow-up names the selection again; its block is already in the thread.
+    const content = t.book && t.kind === 'quote' ? bookMessage(action, { text: t.quote.text, inTranslation: t.quote.inTranslation }) : followUpText(action, prefs, t.kind === 'image');
+    await this.send({ action, content, isAction: true });
   }
 
   async send({ action, content, display, isAction = false }) {
@@ -307,7 +347,7 @@ export class AiPanel {
     await this.runReply(user, reply, action);
   }
 
-  async runReply(user, reply, action) {
+  async runReply(user, reply, action, fresh = false, model) {
     const t = this.thread;
     const controller = new AbortController();
     this.controller = controller;
@@ -316,6 +356,8 @@ export class AiPanel {
     let frame = 0;
     await runTurn(t, reply, {
       action,
+      fresh,
+      model,
       signal: controller.signal,
       onUpdate: () => {
         if (this.thread !== t) return;
@@ -340,16 +382,18 @@ export class AiPanel {
     this.controller?.abort();
   }
 
-  async retry(reply) {
+  // Retry and regenerate want a new answer, not the stored one; `model` ('opus') asks a
+  // particular model instead of the automatic choice.
+  async retry(reply, model) {
     const t = this.thread;
     const i = t.messages.indexOf(reply);
     const user = t.messages[i - 1];
     if (!user || this.controller) return;
     t.messages.splice(i, 1);
     delete user.failed;
-    const fresh = { role: 'assistant', content: '', pending: true };
-    t.messages.splice(i, 0, fresh);
-    await this.runReply(user, fresh, user.action || 'ask');
+    const next = { role: 'assistant', content: '', pending: true };
+    t.messages.splice(i, 0, next);
+    await this.runReply(user, next, user.action || 'ask', true, model);
   }
 
   async persist(t) {
@@ -382,13 +426,15 @@ export class AiPanel {
     if (!t) return this.renderHistory();
     const titleIcon = { translate: 'translate', explain: 'bulb', ask: 'message', chat: 'sparkles' }[t.action] || 'sparkles';
     const lastModel = [...t.messages].reverse().find((m) => m.model)?.model;
-    const titleText = t.kind === 'chat' ? tr('action.chat') : t.kind === 'image' ? tr('action.image') : tr(`action.${t.action}`);
-    this.setTitle(t.kind === 'image' ? 'scan' : titleIcon, titleText, lastModel || '');
+    const titleText = t.kind === 'chat' ? tr(t.book ? 'action.bookChat' : 'action.chat') : t.kind === 'image' ? tr('action.image') : tr(`action.${t.action}`);
+    this.setTitle(t.kind === 'image' ? 'scan' : titleIcon, titleText, modelLabel(lastModel));
     this.body.replaceChildren();
     this.msgEls = new Map();
 
     if (t.quote) this.body.append(this.renderQuote(t));
-    if (t.kind === 'chat' && !t.messages.length) {
+    if (t.kind === 'chat' && !t.messages.length && t.book) {
+      this.body.append(h('div', { class: 'ai-intro', text: tr('ai.bookIntro') }));
+    } else if (t.kind === 'chat' && !t.messages.length) {
       this.body.append(
         h(
           'div',
@@ -490,10 +536,18 @@ export class AiPanel {
           onClick: async () => toast((await copyText(m.content)) ? tr('common.copied') : tr('common.copyFailed')),
         }),
       );
+      const q = this.thread?.quote;
+      if (q?.anchor && this.onNote) {
+        tools.append(h('button', { type: 'button', html: `${icon('pushpin')}<span>${tr('ai.addNote')}</span>`, onClick: () => this.onNote(q, m.content) }));
+      }
       const last = this.thread?.messages[this.thread.messages.length - 1] === m;
       if (last && !this.controller) {
         tools.append(h('button', { type: 'button', html: `${icon('refresh')}<span>${tr('ai.regenerate')}</span>`, onClick: () => this.retry(m) }));
+        if (canAskOpus(m, cachedSettings()?.llm)) {
+          tools.append(h('button', { type: 'button', html: `${icon('sparkles')}<span>${tr('ai.askOpus')}</span>`, onClick: () => this.retry(m, 'opus') }));
+        }
       }
+      if (m.model) tools.append(h('span', { class: 'model-tag', text: modelLabel(m.model) }));
       el.append(tools);
       if (m.stopReason === 'max_tokens') el.append(h('div', { class: 'msg-note', text: tr('ai.cutOff') }));
       if (m.stopped) el.append(h('div', { class: 'msg-note', text: tr('ai.stopped') }));
@@ -508,7 +562,9 @@ export class AiPanel {
       this.quickRow.hidden = true;
       return;
     }
-    const acts = ['translate', 'explain'];
+    // The translation of a book, or a chapter written in the reader's language, has nothing to translate. A
+    // passage that can take a note can ask what is missing to read on.
+    const acts = [...(t.quote?.inTranslation || t.quote?.inTarget ? ['explain'] : ['translate', 'explain']), ...(t.quote?.anchor && this.onNote ? ['gap'] : [])];
     for (const a of acts) {
       const chip = h('button', { class: 'chip', type: 'button', html: `${icon(KIND_ICON[a])}<span>${tr(`action.${a}`)}</span>` });
       chip.disabled = !!this.controller;
@@ -533,7 +589,7 @@ export class AiPanel {
       h(
         'div',
         { class: 'hist-new' },
-        h('button', { class: 'chip', type: 'button', html: `${icon('sparkles')}<span>${tr('reader.askPaper')}</span>`, onClick: () => this.startChat() }),
+        h('button', { class: 'chip', type: 'button', html: `${icon('sparkles')}<span>${tr(this.isBook ? 'reader.askBook' : 'reader.askPaper')}</span>`, onClick: () => this.startChat() }),
       ),
       h('div', { class: 'hint', text: tr('ai.historyHint') }),
     );

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- launchd agent template: README "Running as a service" fills in @ROOT@ and @HOME@. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>org.eng-reader</string>
+  <key>ProgramArguments</key>
+  <array>
+    <!-- caffeinate -i keeps the Mac from idle-sleeping while the server runs. -->
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
+    <string>/bin/sh</string>
+    <string>@ROOT@/scripts/start.sh</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>@HOME@/Library/Logs/eng-reader.log</string>
+  <key>StandardErrorPath</key>
+  <string>@HOME@/Library/Logs/eng-reader.log</string>
+</dict>
+</plist>

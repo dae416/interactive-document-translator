@@ -32,7 +32,7 @@ SOFTWARE.
 
 ## npm dependencies
 
-These are installed by `npm install` and served to the browser from `node_modules`. Each package ships its own license file.
+These are installed by `npm ci` (or `npm install`); the browser gets pdf.js, KaTeX, marked and DOMPurify from `node_modules`, the server uses the rest. Each package ships its own license file.
 
 | Package | License |
 |---|---|
@@ -42,3 +42,5 @@ These are installed by `npm install` and served to the browser from `node_module
 | [DOMPurify](https://github.com/cure53/DOMPurify) | Apache-2.0 or MPL-2.0 |
 | [Anthropic TypeScript SDK](https://github.com/anthropics/anthropic-sdk-typescript) (`@anthropic-ai/sdk`) | MIT |
 | [undici](https://github.com/nodejs/undici) | MIT |
+| [linkedom](https://github.com/WebReflection/linkedom) | ISC |
+| [Readability.js](https://github.com/mozilla/readability) (`@mozilla/readability`) | Apache-2.0 |

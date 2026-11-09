@@ -1,3 +1,6 @@
 node_modules/
 data/
 *.log
+
+# the data folders of other apps of this code (instances/<name>.env)
+data-*/

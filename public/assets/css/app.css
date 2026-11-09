@@ -711,6 +711,10 @@ select.input {
   line-height: 1.6;
   overscroll-behavior: contain;
 }
+/* the original of several paragraphs (Original) keeps its breaks */
+.peek-body > div {
+  white-space: pre-line;
+}
 .peek-actions {
   display: flex;
   gap: 8px;
@@ -726,6 +730,25 @@ select.input {
     transform: translateX(-50%);
     animation: fade 0.16s;
   }
+  .peek.peek-orig {
+    width: min(720px, calc(100vw - 40px));
+  }
+}
+/* the part of an original page a block translates (Original, in a chapter translated from a
+   scan): as printed, black on white in either theme, the page cut down to that part */
+.peek.peek-orig {
+  max-height: 70dvh;
+}
+.orig-part {
+  position: relative;
+  overflow: hidden;
+  margin: 4px 0 10px;
+  background: #fff;
+  border-radius: 6px;
+}
+.orig-part img {
+  position: absolute;
+  max-width: none;
 }
 .back-chip {
   position: fixed;
@@ -807,17 +830,12 @@ select.input {
   font-size: 17px;
   letter-spacing: 0.01em;
 }
-.brand-mark {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  display: grid;
-  place-items: center;
-}
-.brand-mark svg {
-  --icon: 19px;
+/* the app's own logo (ui.js appLogo): a sparrow in its nest, or at the mill */
+.brand-logo {
+  display: block;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
 }
 .home {
   max-width: 680px;
@@ -830,32 +848,17 @@ select.input {
   justify-content: space-between;
   height: 52px;
 }
-.hero {
-  margin-top: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 22px 18px 18px;
-  box-shadow: var(--shadow-1);
-}
-.hero h1 {
-  font-size: 22px;
-  line-height: 1.3;
-  margin: 0 0 6px;
-  letter-spacing: 0.01em;
-}
-.hero .sub {
-  color: var(--text-2);
-  margin: 0 0 18px;
-  font-size: 14px;
+.add-book {
+  margin-top: 6px;
 }
 .import-form {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .input-wrap {
   position: relative;
+  flex: 1;
+  min-width: 0;
 }
 .input-wrap svg {
   position: absolute;
@@ -868,49 +871,56 @@ select.input {
 }
 .input-wrap .input {
   padding-left: 40px;
+  padding-right: 44px;
   height: 48px;
   background: var(--surface-2);
+}
+.input-wrap .attach {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.input-wrap .attach svg {
+  position: static;
+  transform: none;
+  pointer-events: auto;
+}
+.input-wrap .attach.on svg {
+  color: var(--accent);
 }
 .import-form .btn {
   height: 48px;
 }
-@media (min-width: 560px) {
-  .import-form {
-    flex-direction: row;
-  }
-  .import-form .input-wrap {
-    flex: 1;
-  }
-}
-.or-divider {
+.follow-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 16px 0;
-  color: var(--text-3);
-  font-size: 12.5px;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-2);
 }
-.or-divider::before,
-.or-divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--border);
+.follow-row .input {
+  width: 72px;
+  height: 36px;
+  background: var(--surface-2);
 }
 .upload-btn {
   position: relative;
   overflow: hidden;
   width: 100%;
-  min-height: 54px;
+  min-height: 40px;
+  margin-top: 8px;
   border: 1.5px dashed var(--border-strong);
-  background: var(--surface-2);
-  border-radius: 14px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  font-weight: 600;
-  font-size: 15px;
+  font-weight: 550;
+  font-size: 13.5px;
+  color: var(--text-2);
   transition: border-color 0.15s, background-color 0.15s;
 }
 .upload-btn svg {
@@ -940,20 +950,10 @@ select.input {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
-.examples {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 14px;
-  font-size: 12.5px;
-  color: var(--text-3);
-}
-.examples .chip {
-  height: 26px;
-  font-size: 12px;
-  font-weight: 500;
-  padding: 0 10px;
+.import-hint {
+  margin-top: 10px;
+  font-size: 13.5px;
+  color: var(--text-2);
 }
 .import-error {
   color: var(--danger);
@@ -1020,31 +1020,211 @@ select.input {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.src-tag {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 7px;
-  border-radius: 6px;
-  background: var(--surface-3);
-  color: var(--text-2);
-  font-size: 11.5px;
+.book-status {
+  color: var(--accent);
   font-weight: 600;
 }
-.src-tag.arxiv {
-  background: rgba(179, 27, 27, 0.1);
-  color: #b31b1b;
+.book-status.error {
+  color: var(--danger);
 }
-:root[data-theme="dark"] .src-tag.arxiv {
-  color: #ff8c8c;
+/* a bookmark on the home page: the words it marks, then its book (home.js) */
+.home-marks {
+  max-height: 208px;
+  overflow-y: auto;
+  gap: 6px;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .src-tag.arxiv {
-    color: #ff8c8c;
-  }
+.mark-card {
+  padding: 8px 6px 7px 13px;
+}
+.mark-card .t {
+  font-weight: 500;
+  font-size: 14px;
+  -webkit-line-clamp: 1;
+}
+.mark-card .m {
+  margin-top: 2px;
+  font-size: 12px;
+}
+.mark-card .mark-book {
+  max-width: 60vw;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
 }
 .paper-card .more {
   margin-top: -6px;
+}
+/* the bookshelf: books in a pile, spines out, the latest read on top (home.js dresses each) */
+.stack {
+  gap: 2px;
+  padding: 0 12px;
+  isolation: isolate;
+}
+.stack::after {
+  content: "";
+  height: 8px;
+  margin: 2px -12px 0;
+  border-radius: 2px;
+  background: #8a6f50;
+  box-shadow: 0 2px 3px rgba(0, 0, 0, 0.25);
+}
+.spine {
+  position: relative;
+  width: var(--wide, 100%);
+  min-height: var(--thick, 56px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 4px 7px 28px;
+  border-radius: 3px 7px 7px 3px;
+  background: var(--cloth, #37474f);
+  color: #f4ecdf;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13), inset 0 -2px 0 rgba(0, 0, 0, 0.2), 0 1px 1px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s, filter 0.15s;
+}
+/* the gilt lines near the hinge */
+.spine::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 12px;
+  width: 5px;
+  border-left: 1px solid rgba(231, 199, 130, 0.65);
+  border-right: 1px solid rgba(231, 199, 130, 0.65);
+}
+.spine:active {
+  filter: brightness(1.15);
+}
+@media (hover: hover) {
+  .spine:hover {
+    transform: translateX(4px);
+  }
+}
+.spine-text {
+  min-width: 0;
+}
+.spine .t {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.spine .m {
+  margin-top: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px 8px;
+  font-size: 11.5px;
+  color: rgba(244, 236, 223, 0.72);
+}
+.spine .authors {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* a journal article's journal, under its title as a citation sets it */
+.spine .v {
+  margin-top: 1px;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 12.5px;
+  color: rgba(244, 236, 223, 0.92);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.spine .book-status,
+.spine .book-status.error {
+  color: #f1c97c;
+}
+.spine .icon-btn {
+  color: inherit;
+  opacity: 0.75;
+}
+/* a bookmark, out of the end of the book at its depth: the top of the spine is the book's front
+   (home.js). The button is larger than the ribbon, for a finger, and grows outward: the spine
+   takes the taps on what lies behind it. */
+.ribbon {
+  position: absolute;
+  z-index: -1;
+  right: -26px;
+  top: calc(var(--at, 0) * (100% - 6px) - 8px);
+  width: 36px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.ribbon::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  right: 15px;
+  width: 11px;
+  height: 6px;
+  background: #cf3b30;
+  clip-path: polygon(0 0, 100% 0, 78% 50%, 100% 100%, 0 100%);
+}
+/* a paper among the books: loose pages, not cloth */
+.spine.leaflet {
+  background: #e9e1d0;
+  color: #3a3226;
+}
+.spine.leaflet .m {
+  color: rgba(58, 50, 38, 0.72);
+}
+.spine.leaflet::before {
+  display: none;
+}
+.stack.away .spine {
+  filter: saturate(0.35);
+  opacity: 0.85;
+}
+.found-list {
+  margin-top: 12px;
+}
+.found-list .found-card {
+  grid-template-columns: 1fr;
+  padding-right: 15px;
+  cursor: default;
+}
+.found-card .found-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.found-card .found-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.shelf > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.shelf > summary::-webkit-details-marker {
+  display: none;
+}
+.shelf > summary > span:first-child::after {
+  content: ' ▸';
+}
+.shelf[open] > summary > span:first-child::after {
+  content: ' ▾';
+}
+.spine .shelf-tag {
+  font-weight: 600;
 }
 .empty {
   text-align: center;
@@ -1242,6 +1422,8 @@ select.input {
   overscroll-behavior: contain;
   touch-action: pan-x pan-y;
   outline: none;
+  /* pdf.js stacks a page's links ever higher (z-index 0, 2, 4, …): kept under the bars above it */
+  isolation: isolate;
 }
 .pdf-scroll .pdfViewer {
   padding: calc(var(--topbar-h) + var(--safe-top) + 10px) 0 calc(130px + var(--safe-bottom));
@@ -1311,6 +1493,8 @@ select.input {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   background: var(--read-bg);
+  /* side-by-side translations follow this width, not the window's */
+  container-type: inline-size;
 }
 .html-article {
   max-width: 760px;
@@ -1420,14 +1604,16 @@ select.input {
   margin: 0;
 }
 .html-article .ltx_figure,
-.html-article .ltx_table {
+.html-article .ltx_table,
+.html-article .book-fig {
   margin: 1.4em 0;
   text-align: center;
   overflow-x: auto;
   overflow-y: hidden;
 }
 .html-article .ltx_figure img,
-.html-article .ltx_graphics {
+.html-article .ltx_graphics,
+.html-article .book-fig img {
   max-width: 100%;
   height: auto;
   background: var(--figure-bg);
@@ -1438,6 +1624,49 @@ select.input {
   max-width: 100%;
   height: auto;
   background: var(--figure-bg);
+}
+/* A book written in Markdown with LaTeX (server/book.js): its formulas (tex.js), hidden marks,
+   boxes and tables. */
+.html-article k-tex.d {
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.html-article .mk {
+  display: none;
+}
+.html-article .ltx_para[class*=' q-'] {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 0.9em;
+}
+.html-article .ltx_para.q-note {
+  border-left-color: var(--accent);
+}
+.html-article .ltx_para.q-tip {
+  border-left-color: var(--success);
+}
+.html-article .ltx_para.q-warning {
+  border-left-color: #d08a1e;
+}
+.html-article .tbl {
+  overflow-x: auto;
+  margin: 0 0 0.85em;
+}
+.html-article .tbl table {
+  border-collapse: collapse;
+  font-size: 0.88em;
+  line-height: 1.45;
+}
+.html-article .tbl th,
+.html-article .tbl td {
+  border: 1px solid var(--border-strong);
+  padding: 0.3em 0.55em;
+  text-align: left;
+  vertical-align: top;
+}
+.html-article .tbl th {
+  background: var(--accent-soft);
+  font-weight: 600;
 }
 .html-article .ltx_flex_figure {
   display: flex;
@@ -1640,6 +1869,446 @@ select.input {
   }
 }
 
+/* ============ chapter tabs (a book read one chapter at a time) ============ */
+.chapter-tabs {
+  position: sticky;
+  z-index: 1;
+  top: calc(var(--topbar-h) + var(--safe-top));
+  display: flex;
+  gap: 2px;
+  padding: 0 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  background: var(--topbar-bg);
+  -webkit-backdrop-filter: saturate(1.6) blur(16px);
+  backdrop-filter: saturate(1.6) blur(16px);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-ui);
+  transition: transform 0.25s ease;
+}
+.chapter-tabs::-webkit-scrollbar {
+  display: none;
+}
+/* stays when the toolbar above it goes, moving up into its place */
+.reader.chrome-hidden .chapter-tabs {
+  transform: translateY(calc(-1 * var(--topbar-h)));
+}
+.chapter-tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 42px;
+  padding: 0 12px;
+  border-bottom: 2px solid transparent;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.chapter-tab.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.chapter-tab .tab-mark {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  color: var(--success);
+}
+.chapter-tab .tab-mark:empty {
+  display: none;
+}
+.chapter-tab .spinner {
+  width: 12px;
+  height: 12px;
+  color: var(--text-3);
+}
+/* over a book's pages (from the PDF's bookmarks): under the toolbar, the first page below them */
+.chapter-tabs.pdf-tabs {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+.pdf-scroll.has-tabs .pdfViewer {
+  padding-top: calc(var(--topbar-h) + var(--safe-top) + 53px);
+}
+/* pdf.js focuses a page jumped to, and the focus scrolls it: also to just under the tabs */
+.pdf-scroll.has-tabs {
+  scroll-padding-top: calc(var(--topbar-h) + var(--safe-top) + 43px);
+}
+.html-article section[data-chapter][hidden] {
+  display: none;
+}
+.chapter-nav {
+  display: flex;
+  gap: 12px;
+  margin: 2.4em 0 0;
+  padding-top: 1.2em;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-ui);
+}
+.chapter-nav .next {
+  margin-left: auto;
+}
+
+/* ============ chapter translations ============ */
+.tr-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: -0.2em 0 1.2em;
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.45;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* what a translation on its way is doing: on a phone it may take two lines */
+.tr-bar .btn:disabled {
+  opacity: 1;
+  color: var(--text-2);
+  height: auto;
+  min-height: 34px;
+  padding-block: 6px;
+  white-space: normal;
+  text-align: left;
+}
+.tr-bar .spinner {
+  width: 14px;
+  height: 14px;
+}
+.tr-error {
+  color: var(--danger);
+}
+.tr-status {
+  color: var(--text-2);
+}
+/* the bar of a part of a chapter, at its first block */
+.html-article .tr-part {
+  margin: 1.2em 0;
+  padding-top: 0.8em;
+  border-top: 1px dashed var(--border-strong);
+}
+/* Korean breaks lines between its words, not inside them */
+.html-article .tr-block:lang(ko) {
+  word-break: keep-all;
+}
+.html-article .tr-h {
+  font-family: var(--font-ui);
+  font-size: 1.02em;
+  font-weight: 650;
+  line-height: 1.4;
+  margin-bottom: 0.6em;
+}
+.html-article .fn,
+.html-article .fn-src {
+  position: relative;
+  padding: 0.3em 0.2em;
+  font-family: var(--font-ui);
+  font-size: 0.68em;
+  font-weight: 700;
+  line-height: 0;
+  color: var(--accent);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* in the original, close to the word before it and with no gap before the punctuation after it */
+.html-article .fn-src {
+  padding: 0.3em 0 0.3em 1px;
+}
+/* a marker has no text of its own, in the original or the translation (offsets into either text, and the
+   marks on it, stay as they are): its number is drawn; two at one place read 4,5 */
+.html-article .fn::after,
+.html-article .fn-src::after {
+  content: attr(data-n);
+}
+.html-article .fn-then::after {
+  content: attr(data-n) ',';
+}
+/* a 24px tap target around the marker, outside the line's layout */
+.html-article .fn::before,
+.html-article .fn-src::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+}
+.html-article .tr-notes {
+  margin: 1.6em 0 0;
+  padding: 0.8em 0 0 1.6em;
+  border-top: 1px solid var(--border);
+  font-size: 0.84em;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.html-article .tr-notes:lang(ko) {
+  word-break: keep-all;
+}
+.html-article .tr-notes li {
+  margin: 0 0 0.35em;
+}
+.html-article section:not(.bilingual, .tgt-only) > .tr-block,
+.html-article section:not(.bilingual, .tgt-only) > .tr-notes {
+  display: none;
+}
+/* the translation only: each translated block's translation in its place, one column at the normal
+   size (a part not translated yet stays in the original) */
+.html-article section.tgt-only > [data-b].tr-done {
+  display: none;
+}
+.html-article section.tgt-only > .tr-block {
+  margin: 0 0 0.85em;
+}
+.html-article section.tgt-only > .tr-h {
+  margin: 1.5em 0 0.5em;
+}
+/* side by side: each block and its translation on one row; the chapter may grow wider than the
+   single-column text, up to the reading area */
+.html-article section.bilingual {
+  --bi-w: min(1180px, 100cqw - 40px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 2em;
+  align-items: start;
+  width: var(--bi-w);
+  margin-left: calc((100% - var(--bi-w)) / 2);
+}
+.html-article section.bilingual > * {
+  grid-column: 1;
+}
+.html-article section.bilingual > .tr-block {
+  grid-column: 2;
+  margin: 0 0 0.85em;
+}
+.html-article section.bilingual > .tr-h {
+  margin: 1.5em 0 0.5em;
+}
+.html-article section.bilingual > h2,
+.html-article section.bilingual > .tr-bar,
+.html-article section.bilingual > .tr-notes,
+.html-article section.bilingual > .book-fig,
+.html-article section.bilingual > .gap-note {
+  grid-column: 1 / -1;
+}
+/* a phone held upright: narrow columns, so smaller text, a narrower gap and nearly the full width */
+@container (max-width: 599px) {
+  .html-article section.bilingual {
+    --bi-w: calc(100cqw - 16px);
+    column-gap: 0.75em;
+    font-size: 0.84em;
+  }
+  .html-article section.bilingual > [data-b] {
+    hyphens: auto;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* ============ a textbook's parts (b.r, server/book.js), in one column ============ */
+/* a chapter's sections in one tab: each head with a rule over it; a caption under its figure; a
+   footnote small, after the paragraph that calls it */
+.html-article .book:not(.paper) .r-sec,
+.html-article .book:not(.paper) .r-sec + .tr-h {
+  font-size: 1.16em;
+  font-weight: 700;
+  margin: 2.2em 0 0.7em;
+  padding-top: 0.7em;
+  border-top: 1px solid var(--border);
+}
+.html-article .book:not(.paper) .r-cap,
+.html-article .book:not(.paper) .r-cap + .tr-block {
+  margin-top: -0.6em;
+  font-size: 0.86em;
+  line-height: 1.55;
+  color: var(--text-2);
+  text-align: center;
+}
+.html-article .book:not(.paper) .r-fn,
+.html-article .book:not(.paper) .r-fn + .tr-block {
+  margin: -0.2em 0 1em;
+  padding-left: 0.8em;
+  border-left: 2px solid var(--border);
+  font-size: 0.8em;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+/* ============ a journal article (book.layout 'paper', server/book.js) ============ */
+/* As the journal prints it: its line on top, the title, the authors and the abstract across the
+   page, and where there is room the text in two columns, each section balanced on its own under
+   its head, which goes across both like the tables, the figures (not one printed in a column) and
+   their captions. A block's translation, just after it, looks as it does. */
+.html-article .paper > section > h2 {
+  font-size: 0.72em;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin: 0 0 0.8em;
+  padding-bottom: 0.55em;
+  border-bottom: 1px solid var(--border);
+}
+.html-article .paper .r-kicker,
+.html-article .paper .r-kicker + .tr-block {
+  font-family: var(--font-ui);
+  font-size: 0.74em;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.html-article .paper .r-title,
+.html-article .paper .r-title + .tr-h {
+  font-size: 1.5em;
+  line-height: 1.25;
+  font-weight: 700;
+  margin: 0.15em 0 0.5em;
+}
+.html-article .paper .r-authors,
+.html-article .paper .r-authors + .tr-block {
+  font-family: var(--font-ui);
+  font-size: 0.86em;
+  font-weight: 600;
+  margin-bottom: 1.3em;
+}
+.html-article .paper .r-abstract,
+.html-article .paper .r-abstract + .tr-block {
+  background: var(--surface-2);
+  border-radius: 12px;
+  padding: 1em 1.1em;
+  margin-bottom: 1.6em;
+  font-size: 0.94em;
+}
+.html-article .paper .r-abstract .ltx_p {
+  margin: 0;
+}
+.html-article .paper .r-sec {
+  font-size: 0.92em;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+/* (a translation may have no capitals, as Korean has none: a size bigger than a subsection's instead) */
+.html-article .paper .r-sec + .tr-h {
+  font-size: 1.14em;
+}
+.html-article .paper .r-sec,
+.html-article .paper .r-sec + .tr-h {
+  margin: 1.9em 0 0.6em;
+}
+.html-article .paper .r-cap,
+.html-article .paper .r-cap + .tr-block {
+  font-size: 0.86em;
+  line-height: 1.55;
+  color: var(--text-2);
+  margin-bottom: 1.2em;
+  break-inside: avoid;
+}
+.html-article .paper .r-ref,
+.html-article .paper .r-ref + .tr-block,
+.html-article .paper .r-end,
+.html-article .paper .r-end + .tr-block {
+  font-size: 0.8em;
+  line-height: 1.5;
+}
+.html-article .paper .r-end,
+.html-article .paper .r-end + .tr-block {
+  color: var(--text-2);
+}
+.html-article .paper h3,
+.html-article .paper .tr-h {
+  break-after: avoid;
+}
+/* A run of text between two things across the page (columns.js): laid out as if it were not there,
+   but in two columns where there is room, each balanced on its own; columns.js cuts one taller than
+   the screen into runs that are not, like pages (.col-break). What goes across stays outside the
+   runs, as a child of the section. The rules on a section's blocks and their translations, again for those
+   in a run: */
+.html-article .col-run {
+  display: contents;
+}
+.html-article section:not(.bilingual, .tgt-only) > .col-run > .tr-block,
+.html-article section.tgt-only > .col-run > [data-b].tr-done {
+  display: none;
+}
+.html-article section.tgt-only > .col-run > .tr-block {
+  margin: 0 0 0.85em;
+}
+.html-article section.tgt-only > .col-run > .tr-h,
+.html-article section.bilingual > .col-run > .tr-h {
+  margin: 1.5em 0 0.5em;
+}
+.html-article section.bilingual > .col-run > * {
+  grid-column: 1;
+}
+.html-article section.bilingual > .col-run > .tr-block {
+  grid-column: 2;
+  margin: 0 0 0.85em;
+}
+.html-article section.bilingual > .col-run > .book-fig,
+.html-article section.bilingual > .col-run > .gap-note,
+.html-article section.bilingual > .col-run > .tr-bar {
+  grid-column: 1 / -1;
+}
+@container (max-width: 599px) {
+  .html-article section.bilingual > .col-run > [data-b] {
+    hyphens: auto;
+    overflow-wrap: anywhere;
+  }
+}
+@container (min-width: 900px) {
+  .html-article .paper > section:not(.bilingual) {
+    --pw: min(1100px, 100cqw - 64px);
+    width: var(--pw);
+    margin-left: calc((100% - var(--pw)) / 2);
+  }
+  .html-article .paper > section:not(.bilingual) > .col-run {
+    display: block;
+    columns: 2;
+    column-gap: 2.6em;
+  }
+  .html-article .paper .col-run > .col-break {
+    column-span: all;
+    height: 0;
+    margin: 0.3em 0 1.4em;
+    border-top: 1px solid var(--border);
+  }
+  /* a caption across the page about as wide as its figure */
+  .html-article .paper > section:not(.bilingual) > :is(.r-cap, .r-cap + .tr-block) {
+    max-width: 50em;
+    margin-inline: auto;
+  }
+  .html-article .paper > section:not(.bilingual) > .col-run > :is([data-b], .tr-block):not(h3, .tr-h, .tbl) {
+    text-align: justify;
+    hyphens: auto;
+  }
+}
+.fn-pop {
+  position: fixed;
+  z-index: 50;
+  width: min(320px, calc(100vw - 20px));
+  max-height: 40dvh;
+  overflow-y: auto;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-3);
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text);
+  overflow-wrap: break-word;
+  animation: fade 0.12s ease-out;
+}
+.fn-pop:lang(ko) {
+  word-break: keep-all;
+}
+
 /* ============ selection bar ============ */
 .selbar {
   position: fixed;
@@ -1650,6 +2319,7 @@ select.input {
   opacity: 0;
   pointer-events: none;
   display: flex;
+  flex-direction: column;
   gap: 2px;
   padding: 5px;
   background: var(--surface);
@@ -1657,6 +2327,39 @@ select.input {
   border-radius: 18px;
   box-shadow: var(--shadow-3);
   transition: opacity 0.16s, transform 0.16s;
+}
+.selbar-main {
+  display: flex;
+  gap: 2px;
+}
+/* a selection's bar on a phone: clear of Chrome's search bar (selection.js) */
+.selbar.top {
+  top: calc(8px + var(--safe-top));
+  bottom: auto;
+  transform: translate(-50%, -14px);
+}
+.selbar.lift {
+  bottom: calc(96px + var(--safe-bottom) + var(--sel-offset, 0px));
+}
+/* a tapped clause's bar, small at the foot of the screen until tapped (selection.js) */
+.selbar .selbar-more {
+  display: none;
+}
+.selbar.mini {
+  padding: 3px;
+  border-radius: 999px;
+}
+.selbar.mini > :not(.selbar-more) {
+  display: none;
+}
+.selbar.mini .selbar-more {
+  display: flex;
+  min-width: 58px;
+  padding: 7px 14px;
+}
+.selbar:not(.show) {
+  visibility: hidden;
+  transition: opacity 0.16s, transform 0.16s, visibility 0s 0.16s;
 }
 .selbar.show {
   opacity: 1;
@@ -1688,6 +2391,11 @@ select.input {
   transform: none;
   border-radius: 12px;
   padding: 4px;
+  /* at its place at once (no slide from the docked spot): a tapped sentence's balloon measures it */
+  transition: opacity 0.16s;
+}
+.selbar.floating:not(.show) {
+  transition: opacity 0.16s, visibility 0s 0.16s;
 }
 .selbar.floating.show {
   transform: none;
@@ -1702,6 +2410,285 @@ select.input {
 }
 .selbar.floating button svg {
   --icon: 17px;
+}
+
+/* ============ book annotations ============ */
+.ann-tools {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.selbar .ann-tools {
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+.selbar .ann-tools .swatch,
+.instant-tools .swatch {
+  display: block;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  min-width: 0;
+  padding: 0;
+  margin: 0 3px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+.selbar .ann-tools .icon-btn,
+.instant-tools .icon-btn {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 10px;
+}
+/* docked on phones: finger-sized */
+.selbar:not(.floating) .ann-tools .swatch,
+.instant-pop.docked .swatch {
+  width: 32px;
+  height: 32px;
+}
+.selbar:not(.floating) .ann-tools .icon-btn,
+.instant-pop.docked .instant-tools .icon-btn {
+  width: 42px;
+  height: 42px;
+}
+.ann-tools .icon-btn svg {
+  color: var(--text-2);
+  --icon: 19px;
+}
+.ann-tools .icon-btn.on svg {
+  color: var(--accent);
+}
+.ann-tools .swatch.yellow,
+.ann-dot.yellow {
+  background: #ffd43b;
+}
+.ann-tools .swatch.green,
+.ann-dot.green {
+  background: #51cf66;
+}
+.ann-tools .swatch.blue,
+.ann-dot.blue {
+  background: #4dabf7;
+}
+.ann-tools .swatch.pink,
+.ann-dot.pink {
+  background: #f783ac;
+}
+.instant-tools {
+  padding: 4px 6px;
+  border-top: 1px solid var(--border);
+}
+::highlight(ann-yellow) {
+  background-color: rgba(255, 212, 59, 0.45);
+}
+::highlight(ann-green) {
+  background-color: rgba(81, 207, 102, 0.32);
+}
+::highlight(ann-blue) {
+  background-color: rgba(77, 171, 247, 0.32);
+}
+::highlight(ann-pink) {
+  background-color: rgba(247, 131, 172, 0.36);
+}
+/* a tapped sentence (and side by side, its translation) */
+::highlight(tap-sentence),
+::highlight(tap-pair) {
+  background-color: rgba(92, 116, 240, 0.24);
+}
+/* On the dark theme the tint hardly shows: what is tapped changes colour instead, and a selection
+   (a drag) gets a stronger tint, so the two look apart. (A PDF's text layer keeps its tint.) */
+:root[data-theme="dark"] ::highlight(tap-sentence),
+:root[data-theme="dark"] ::highlight(tap-pair) {
+  background-color: transparent;
+  color: #ffd43b;
+}
+:root[data-theme="dark"] .html-article ::selection {
+  background-color: rgba(125, 149, 255, 0.4);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) ::highlight(tap-sentence),
+  :root:not([data-theme="light"]) ::highlight(tap-pair) {
+    background-color: transparent;
+    color: #ffd43b;
+  }
+  :root:not([data-theme="light"]) .html-article ::selection {
+    background-color: rgba(125, 149, 255, 0.4);
+  }
+}
+/* Some Safari versions ignore text-decoration in ::highlight, hence the faint tint. */
+::highlight(ann-underline) {
+  text-decoration: underline;
+  text-decoration-color: #e03131;
+  text-decoration-thickness: 2px;
+  background-color: rgba(224, 49, 49, 0.08);
+}
+/* the passage a note was made on */
+::highlight(ann-note) {
+  text-decoration: underline dotted;
+  text-decoration-color: #1c7ed6;
+  text-decoration-thickness: 2px;
+}
+/* A formula is drawn where a highlight can't reach (tex.js): it takes the marks on its own box,
+   data-hl a list of their names. A tap's comes last: it shows over a highlight's colour while its
+   balloon is open. */
+.html-article k-tex[data-hl~="ann-yellow"] {
+  background-color: rgba(255, 212, 59, 0.45);
+}
+.html-article k-tex[data-hl~="ann-green"] {
+  background-color: rgba(81, 207, 102, 0.32);
+}
+.html-article k-tex[data-hl~="ann-blue"] {
+  background-color: rgba(77, 171, 247, 0.32);
+}
+.html-article k-tex[data-hl~="ann-pink"] {
+  background-color: rgba(247, 131, 172, 0.36);
+}
+.html-article k-tex[data-hl~="ann-underline"] {
+  box-shadow: inset 0 -2px #e03131;
+}
+.html-article k-tex[data-hl~="ann-note"] {
+  box-shadow: inset 0 -2px #1c7ed6;
+}
+.html-article k-tex[data-hl~="ann-underline"][data-hl~="ann-note"] {
+  box-shadow: inset 0 -2px #e03131, inset 0 -4px #1c7ed6;
+}
+.html-article k-tex[data-hl~="tap-sentence"],
+.html-article k-tex[data-hl~="tap-pair"] {
+  background-color: rgba(92, 116, 240, 0.24);
+}
+/* A note kept in the text: what was missing to read on, in blue after its passage. */
+.html-article .gap-note {
+  position: relative;
+  margin: 0.2em 0 1.1em;
+  padding: 0.7em 2.6em 0.7em 0.9em;
+  border-left: 3px solid #1c7ed6;
+  border-radius: 0 var(--radius-s) var(--radius-s) 0;
+  background: rgba(28, 126, 214, 0.07);
+  color: #1864ab;
+  font-size: 0.93em;
+}
+:root[data-theme="dark"] .html-article .gap-note {
+  color: #a5d8ff;
+  background: rgba(77, 171, 247, 0.1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .html-article .gap-note {
+    color: #a5d8ff;
+    background: rgba(77, 171, 247, 0.1);
+  }
+}
+.html-article .gap-note .md > :first-child {
+  margin-top: 0;
+}
+.html-article .gap-note .md > :last-child {
+  margin-bottom: 0;
+}
+.html-article .gap-note-tools {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  flex-direction: column;
+  opacity: 0.55;
+}
+.html-article .gap-note-tools .icon-btn {
+  width: 30px;
+  height: 30px;
+}
+.dialog-wide {
+  width: min(560px, calc(100vw - 32px));
+}
+.dialog-text {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 38vh;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-s);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.55;
+  resize: vertical;
+}
+.html-article .ann-bookmark {
+  position: relative;
+}
+.html-article .ann-bookmark::before {
+  content: "";
+  position: absolute;
+  left: -13px;
+  top: 0.3em;
+  width: 4px;
+  height: 1.1em;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.ann-item {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 6px 10px 18px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.ann-item:hover,
+.ann-item:active {
+  background: var(--surface-2);
+}
+.ann-kind {
+  height: 22px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+.ann-kind svg {
+  --icon: 17px;
+}
+.ann-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+}
+.ann-quote {
+  font-family: var(--font-serif);
+  font-size: 14.5px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.ann-quote.underline {
+  text-decoration: underline;
+  text-decoration-color: #e03131;
+  text-underline-offset: 3px;
+}
+.ann-meta {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.ann-item .icon-btn {
+  width: 34px;
+  height: 34px;
+  margin-top: -6px;
+}
+.menu-row .input {
+  width: 64px;
+  height: 34px;
+  padding: 0 8px;
+  font-size: 15px;
 }
 
 /* ============ AI panel ============ */
@@ -1934,9 +2921,20 @@ select.input {
 }
 .msg-tools {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 2px;
   margin-top: 4px;
   margin-left: -8px;
+}
+.msg-tools .model-tag {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
 }
 .msg-tools button {
   display: inline-flex;
@@ -2014,6 +3012,9 @@ select.input {
   max-height: 44dvh;
   border-radius: 16px;
   animation: up 0.2s ease-out;
+}
+.instant-pop.docked.lift {
+  bottom: calc(96px + var(--safe-bottom) + var(--sel-offset, 0px));
 }
 .instant-head {
   display: flex;

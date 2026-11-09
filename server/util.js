@@ -31,21 +31,64 @@ export function sha1(data) {
   return crypto.createHash('sha1').update(data).digest('hex');
 }
 
+// A missing file is "no data". An empty one is not: cloud-sync clients leave 0-byte placeholders for
+// files that are online-only, and writing over one would destroy the real contents.
 export async function readJsonFile(file, fallback = null) {
+  let text;
   try {
-    return JSON.parse(await fs.readFile(file, 'utf8'));
+    text = await fs.readFile(file, 'utf8');
   } catch (err) {
     if (err.code === 'ENOENT') return fallback;
     throw err;
   }
+  if (!text.length) throw new HttpError(503, 'storage.unreadable');
+  return JSON.parse(text);
 }
 
-// Write to a temp file first so a crash never leaves half-written JSON behind.
-export async function writeJsonFile(file, data, { mode } = {}) {
+// Append-only logs (one JSON object per line). An empty existing file is a placeholder: skip it.
+export async function appendJsonLine(file, data) {
+  try {
+    if ((await fs.stat(file)).size === 0) {
+      console.warn(`[storage] ${file} is an online-only placeholder; not appending`);
+      return;
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+    await fs.mkdir(path.dirname(file), { recursive: true });
+  }
+  await fs.appendFile(file, `${JSON.stringify(data)}\n`);
+}
+
+export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// On Windows, renaming onto a file that a sync client or a virus scanner holds open fails for a
+// moment (EPERM, EBUSY, EACCES); try again a few times before giving up.
+export async function renameFile(from, to) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fs.rename(from, to);
+    } catch (err) {
+      if (attempt >= 10 || !['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) throw err;
+      await sleep(30 * attempt);
+    }
+  }
+}
+
+// Write to a temp file first so a crash never leaves a half-written file behind.
+export async function writeTextFile(file, text, { mode } = {}) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp-${randomId(6)}`;
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2), mode ? { mode } : undefined);
-  await fs.rename(tmp, file);
+  await fs.writeFile(tmp, text, mode ? { mode } : undefined);
+  try {
+    await renameFile(tmp, file);
+  } catch (err) {
+    await fs.rm(tmp, { force: true });
+    throw err;
+  }
+}
+
+export function writeJsonFile(file, data, opts) {
+  return writeTextFile(file, JSON.stringify(data, null, 2), opts);
 }
 
 export async function exists(file) {
@@ -57,21 +100,34 @@ export async function exists(file) {
   }
 }
 
-export function readBody(req, limit) {
+// A body that doesn't arrive within `timeoutMs` is dropped (uploads stream elsewhere, with the
+// server's long request timeout).
+export function readBody(req, limit, timeoutMs = 30_000) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
+    const timer = setTimeout(() => {
+      reject(new HttpError(408, 'common.timeout'));
+      req.destroy();
+    }, timeoutMs);
     req.on('data', (chunk) => {
       size += chunk.length;
       if (size > limit) {
+        clearTimeout(timer);
         reject(new HttpError(413, 'common.tooLarge'));
         req.destroy();
         return;
       }
       chunks.push(chunk);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
+    req.on('end', () => {
+      clearTimeout(timer);
+      resolve(Buffer.concat(chunks));
+    });
+    req.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 
@@ -84,11 +140,15 @@ export async function readJson(req, limit = 1024 * 1024) {
   }
   const buf = await readBody(req, limit);
   if (!buf.length) return {};
+  let body;
   try {
-    return JSON.parse(buf.toString('utf8'));
+    body = JSON.parse(buf.toString('utf8'));
   } catch {
     throw new HttpError(400, 'common.badJson');
   }
+  // Routes read fields of it: null, a number or a string is no request either.
+  if (body === null || typeof body !== 'object') throw new HttpError(400, 'common.badJson');
+  return body;
 }
 
 function acceptsGzip(req) {
@@ -100,6 +160,7 @@ export function sendJson(req, res, status, data, headers = {}) {
   const h = {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
     ...headers,
   };
   if (body.length > 2048 && acceptsGzip(req)) {
@@ -165,6 +226,14 @@ export function decodeEntities(str = '') {
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&');
 }
+
+// Escapes text for HTML, and for the double-quoted attributes of the prompt markup.
+export const attr = (s) =>
+  String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 
 export function collapseWs(str = '') {
   return str.replace(/\s+/g, ' ').trim();

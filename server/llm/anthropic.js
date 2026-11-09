@@ -9,7 +9,7 @@ function isOfficialApi(baseUrl) {
 }
 
 // Effort is accepted by Opus 4.5+, the 4.6+ family and every 5.x model; older ones reject it.
-function effortFor(model, effort) {
+export function effortFor(model, effort) {
   if (!effort || effort === 'auto') return null;
   if (/^claude-(fable|mythos)-/.test(model) || /^claude-(opus|sonnet|haiku)-5/.test(model)) return effort;
   if (/^claude-(opus|sonnet)-4-6/.test(model)) return effort === 'xhigh' ? 'high' : effort;
@@ -18,11 +18,31 @@ function effortFor(model, effort) {
   return null;
 }
 
-function makeClient(llm) {
-  const opts = { maxRetries: 1, fetch: httpFetch };
-  if (llm.apiKey) opts.apiKey = llm.apiKey;
-  if (llm.baseUrl && !isOfficialApi(llm.baseUrl)) opts.baseURL = llm.baseUrl;
-  return new Anthropic(opts);
+// The key a request may use: the one saved for this provider or, for the official API only,
+// ANTHROPIC_API_KEY from the environment. Never sent to another base URL.
+const keyFor = (llm) => llm.apiKey || (isOfficialApi(llm.baseUrl) ? process.env.ANTHROPIC_API_KEY || null : null);
+
+export const hasKey = (llm) => !!keyFor(llm);
+
+// What a request adds to have a refused turn go on with the server's fallback model, where there is one.
+export const fallbackParams = (llm, model) => (isOfficialApi(llm.baseUrl) && FALLBACK_MODELS.has(model) ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {});
+
+// Left alone, the SDK would also fall back to login profiles and federation settings on this
+// machine, whatever the base URL.
+class Client extends Anthropic {
+  _shouldResolveDefaultCredentials() {
+    return false;
+  }
+}
+
+export function makeClient(llm) {
+  return new Client({
+    maxRetries: 1,
+    fetch: httpFetch,
+    baseURL: isOfficialApi(llm.baseUrl) ? 'https://api.anthropic.com' : llm.baseUrl,
+    apiKey: keyFor(llm),
+    authToken: null,
+  });
 }
 
 function textOf(content) {
@@ -49,17 +69,18 @@ function userContent(content) {
 
 // Assistant turns are replayed exactly as the API returned them (thinking blocks
 // included), so later turns keep their reasoning. After a refusal fallback only the
-// text written before the last `fallback` marker is carried over.
+// text written before the last `fallback` marker is carried over. Book threads replay
+// text only, since their context can change between turns.
 function replayContent(blocks) {
   const last = blocks.map((b) => b.type).lastIndexOf('fallback');
   if (last < 0) return blocks;
   return [...blocks.slice(0, last).filter((b) => b.type === 'text'), ...blocks.slice(last + 1)];
 }
 
-function toMessages(messages) {
+function toMessages(messages, textOnlyReplay = false) {
   return messages.map((m) => {
     if (m.role === 'assistant') {
-      if (m.raw?.provider === 'anthropic' && Array.isArray(m.raw.content) && m.raw.content.length) {
+      if (!textOnlyReplay && m.raw?.provider === 'anthropic' && Array.isArray(m.raw.content) && m.raw.content.length) {
         return { role: 'assistant', content: replayContent(m.raw.content) };
       }
       return { role: 'assistant', content: textOf(m.content) || '(empty)' };
@@ -68,27 +89,24 @@ function toMessages(messages) {
   });
 }
 
-export async function streamAnthropic({ llm, system, messages, action, maxTokens, signal }, emit) {
+export async function streamAnthropic({ llm, system, messages, action, maxTokens, signal, textOnlyReplay }, emit) {
   const client = makeClient(llm);
   const model = llm.model || 'claude-opus-5-5';
   const params = {
     model,
     max_tokens: llm.maxTokens || maxTokens,
-    messages: toMessages(messages),
+    messages: toMessages(messages, textOnlyReplay),
   };
   // The system prompt is frozen per conversation, so caching it pays off on follow-ups
-  // (and on whole-paper chats, where it carries the full text).
-  if (system) params.system = [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }];
+  // (and on whole-paper chats, where it carries the full text). Book threads send blocks
+  // that carry their own cache breakpoints.
+  if (Array.isArray(system)) params.system = system;
+  else if (system) params.system = [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }];
   const effort = effortFor(model, llm.effort?.[action]);
   if (effort) params.output_config = { effort };
 
-  const stream =
-    isOfficialApi(llm.baseUrl) && FALLBACK_MODELS.has(model)
-      ? client.beta.messages.stream(
-          { ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' },
-          { signal },
-        )
-      : client.messages.stream(params, { signal });
+  const fallback = fallbackParams(llm, model);
+  const stream = fallback.betas ? client.beta.messages.stream({ ...params, ...fallback }, { signal }) : client.messages.stream(params, { signal });
 
   let announcedThinking = false;
   for await (const event of stream) {

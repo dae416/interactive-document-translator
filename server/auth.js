@@ -1,8 +1,10 @@
 import crypto from 'node:crypto';
-import { getConfig, setPassword, verifyPassword } from './config.js';
+import net from 'node:net';
+import { APP_ID, getConfig, setPassword, verifyPassword } from './config.js';
 import { HttpError, cookieValues } from './util.js';
 
-const COOKIE = 'pr_session';
+// A cookie is the host's, whatever the port: two apps on one host need two names.
+const COOKIE = APP_ID ? `pr_session_${APP_ID}` : 'pr_session';
 // Sessions last 180 days; opening the app renews one that is more than a week old.
 const MAX_AGE = 180 * 24 * 3600;
 const RENEW_AFTER = 7 * 24 * 3600;
@@ -33,6 +35,23 @@ function isHttps(req) {
 
 function clientIp(req) {
   return forwardedHeader(req, 'x-forwarded-for') || req.socket.remoteAddress || '?';
+}
+
+// The sign-in limit counts IPv4 addresses one by one and IPv6 per /64, since one IPv6 client
+// usually holds a whole /64.
+function limitKey(ip) {
+  const addr = ip.replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, '').split('%')[0];
+  if (!net.isIPv6(addr)) return addr;
+  const [head, tail] = addr.split('::');
+  const groups = head ? head.split(':') : [];
+  if (tail !== undefined) {
+    const rest = tail ? tail.split(':') : [];
+    groups.push(...Array(Math.max(0, 8 - groups.length - rest.length)).fill('0'), ...rest);
+  }
+  return `${groups
+    .slice(0, 4)
+    .map((g) => parseInt(g, 16).toString(16))
+    .join(':')}::/64`;
 }
 
 // ---- sessions --------------------------------------------------------------------------
@@ -109,7 +128,7 @@ function attemptRecord(ip, now) {
 }
 
 export async function login(req, res, password) {
-  const ip = clientIp(req);
+  const ip = limitKey(clientIp(req));
   const rec = attemptRecord(ip, Date.now());
   if (rec.count >= MAX_ATTEMPTS) throw new HttpError(429, 'auth.tooMany');
   // Counted before checking, so parallel guesses can't slip past the limit.

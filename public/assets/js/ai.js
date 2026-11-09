@@ -1,6 +1,7 @@
 // Prompt construction and conversation ("thread") handling for the AI panel.
 import { streamChat } from './api.js';
 import { t } from './i18n.js';
+import { langs, scriptOf, spaced } from './langs.js';
 import { uid } from './ui.js';
 
 // Prompts stay in Chinese whatever the interface language; the answer language
@@ -87,6 +88,66 @@ export function quoteMessage(action, quote, prefs, question = '') {
   return blocks.join('\n\n');
 }
 
+// A sentence end followed by the start of another sentence ("Hos. viii." is not one): in a book
+// written in Latin letters, before a capital; in another script, also before a letter of a script
+// without capitals, or after a full stop of Chinese or Japanese with more after it.
+const SENTENCE_BREAK = {
+  latin: /[.!?]['"”’)\]]*\s+['"“‘(\[]*\p{Lu}/u,
+  other: /[.!?।؟]['"”’)\]»]*\s+['"“‘«(\[]*[\p{Lu}\p{Lo}]|[。！？][」』）"”’]*[^\s」』）"”’]/u,
+};
+
+// A word or a short phrase of a book in `lang`: as isWordLike in a language written in Latin
+// letters; in another script, of its letters, and of a script written without spaces (Chinese,
+// Japanese), 8 characters at most.
+function isBookWord(text, lang) {
+  if (scriptOf(lang) === 'Latn') return isWordLike(text);
+  const t = text.trim();
+  if (!t || t.length > 48 || !/\p{L}/u.test(t) || /[.!?;:。！？；]$/.test(t)) return false;
+  return spaced(lang) ? t.split(/\s+/).length <= 3 : t.length <= 8 && !/\s/.test(t);
+}
+
+// The mode of a selection in a book written in `lang` (langs.js).
+export function bookMode(text, lang = langs.src) {
+  if (isBookWord(text, lang)) return 'word';
+  return SENTENCE_BREAK[scriptOf(lang) === 'Latn' ? 'latin' : 'other'].test(text.trim()) ? 'paragraph' : 'sentence';
+}
+
+// Book threads: the server holds the instructions and the book, so a turn carries only the
+// selection, the block it sits in, and the request. quote.mode: a tapped sentence is a sentence,
+// whatever it looks like. A selection in the translation (quote.inTranslation) is marked with the
+// reader's language (lang="ko"), and its paragraph is the original of its blocks.
+export function bookMessage(action, quote, question = '') {
+  const lines = [];
+  const para = (quote.context || '').trim();
+  if (para && para !== quote.text.trim()) lines.push(`<paragraph>${para}</paragraph>`);
+  // (a tapped clause: the sentence it is part of)
+  if (quote.sentence && quote.sentence !== para) lines.push(`<sentence>${quote.sentence}</sentence>`);
+  lines.push(`<selection${quote.inTranslation ? ` lang="${langs.tgt}"` : ''}>${quote.text}</selection>`);
+  if (action === 'translate') lines.push(`Mode: ${quote.mode || bookMode(quote.text)}`);
+  else if (action === 'explain') lines.push('Task: explain');
+  else lines.push(`Question: ${question}`);
+  return lines.join('\n');
+}
+
+// Everything that changes a translate-on-select answer: language, prompt, and in a book the
+// chapter, the block around the selection, a tapped sentence's mode and a tapped clause's sentence.
+export function instantKey(prefs, info) {
+  return JSON.stringify([prefs?.targetLang, prefs?.prompts?.translate || '', info.chapter || '', info.context || '', info.text, info.mode || '', info.sentence || '']);
+}
+
+// "claude-haiku-5-5" -> "Haiku 5.5", "auto" -> "Auto"; other providers' model ids are shown
+// as they are.
+export function modelLabel(id) {
+  if (id === 'auto') return t('model.auto');
+  const m = /^claude-([a-z]+)-(\d+)-(\d+)/.exec(id || '');
+  return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}` : id || '';
+}
+
+// A finished Claude answer from a smaller model can be asked again of Opus.
+export function canAskOpus(reply, llm) {
+  return llm?.protocol === 'anthropic' && !reply.pending && !reply.error && !!reply.content && !!reply.model && !/^claude-opus-/.test(reply.model);
+}
+
 export function imageMessage(action, quote, prefs, question = '') {
   const lang = prefs.targetLang || '简体中文';
   const loc = promptLocation(quote.location);
@@ -108,7 +169,8 @@ export function followUpText(action, prefs, hasImage) {
   return '';
 }
 
-export function newThread({ paper, kind, action, quote = null, system }) {
+// book: { id, chapter } for a thread in a book, fixed when the thread starts.
+export function newThread({ paper, kind, action, quote = null, system, book = null }) {
   const now = new Date().toISOString();
   return {
     id: uid('t'),
@@ -118,6 +180,7 @@ export function newThread({ paper, kind, action, quote = null, system }) {
     title: '',
     quote,
     system,
+    ...(book ? { book } : {}),
     messages: [],
     createdAt: now,
     updatedAt: now,
@@ -155,7 +218,9 @@ export function apiMessages(thread) {
 }
 
 // Runs one assistant turn. `msg` is the assistant placeholder already in thread.messages.
-export async function runTurn(thread, msg, { action, signal, onUpdate }) {
+// `fresh` (retry, regenerate) asks for a new answer instead of a stored one; `model`
+// ('haiku' | 'sonnet' | 'opus') overrides the server's automatic choice.
+export async function runTurn(thread, msg, { action, signal, onUpdate, fresh = false, model }) {
   msg.pending = true;
   msg.content = '';
   msg.status = 'waiting';
@@ -165,7 +230,7 @@ export async function runTurn(thread, msg, { action, signal, onUpdate }) {
   let refused = false;
   try {
     await streamChat(
-      { action, system: thread.system, messages: payload },
+      { action, system: thread.system, messages: payload, book: thread.book, fresh, model },
       {
         signal,
         onEvent: (evt) => {

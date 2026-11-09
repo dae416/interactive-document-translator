@@ -28,6 +28,12 @@ export function iconEl(name, size) {
   return span.firstElementChild;
 }
 
+// The app's own logo, as the page names it (server/static.js fills in which app).
+export function appLogo() {
+  const src = document.querySelector('link[rel="icon"]')?.getAttribute('href') || '/icons/nest.svg';
+  return h('img', { class: 'brand-logo', src: src.includes('{{') ? '/icons/nest.svg' : src, alt: '' });
+}
+
 export function iconButton(name, { title, onClick, className = '' } = {}) {
   return h('button', { class: `icon-btn ${className}`, type: 'button', title, 'aria-label': title, onClick, html: icon(name) });
 }
@@ -68,6 +74,50 @@ export function confirmDialog({ title, message = '', okText = t('common.ok'), ca
     );
     scrim.addEventListener('click', () => done(false));
     document.body.append(scrim, box);
+  });
+}
+
+// A dialog with a text box: resolves to the text, trimmed, on OK; null on cancel or when empty.
+// Text over `max` characters is not taken: a message says so. Escape cancels, and so does a tap
+// beside the dialog, but not once the text has been changed.
+export function textDialog({ title, text = '', max, okText = t('common.save'), cancelText = t('common.cancel') }) {
+  return new Promise((resolve) => {
+    const scrim = h('div', { class: 'scrim' });
+    const area = h('textarea', { class: 'dialog-text', rows: '10', maxlength: max });
+    area.value = text;
+    const done = (v) => {
+      document.removeEventListener('keydown', onKey, true);
+      scrim.remove();
+      box.remove();
+      resolve(v);
+    };
+    const save = () => {
+      const v = area.value.trim();
+      if (v.length > max) toast(t('common.tooLong', { len: v.length.toLocaleString(), n: max.toLocaleString() }), { type: 'error' });
+      else done(v || null);
+    };
+    // (before the reader's own Escape, which would close the panel the text came from)
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || e.isComposing) return;
+      e.stopPropagation();
+      done(null);
+    };
+    const box = h(
+      'div',
+      { class: 'dialog dialog-wide', role: 'dialog', 'aria-modal': 'true' },
+      h('h3', { text: title }),
+      area,
+      h(
+        'div',
+        { class: 'actions' },
+        h('button', { class: 'btn btn-secondary btn-sm', onClick: () => done(null) }, cancelText),
+        h('button', { class: 'btn btn-sm btn-primary', onClick: save }, okText),
+      ),
+    );
+    scrim.addEventListener('click', () => area.value === text && done(null));
+    document.addEventListener('keydown', onKey, true);
+    document.body.append(scrim, box);
+    area.focus();
   });
 }
 

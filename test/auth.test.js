@@ -124,6 +124,41 @@ test('behind a local proxy, the last X-Forwarded-For entry is the client', async
   }
 });
 
+test('behind a tunnel or reverse proxy on this machine, sessions are Secure and same-site requests pass', async () => {
+  const srv = await startServer({ env: { PAPERGLOSS_PASSWORD: PW } });
+  try {
+    // What such a proxy sends: the public Host kept, X-Forwarded-Host/-Proto/-For added.
+    const host = 'reader.example.net';
+    const proxied = { Host: host, 'X-Forwarded-Host': host, 'X-Forwarded-Proto': 'https', 'X-Forwarded-For': '203.0.113.7', Origin: `https://${host}` };
+    const login = await api(srv.url, 'POST', '/api/login', { body: { password: PW }, headers: proxied });
+    assert.equal(login.status, 200);
+    assert.match(login.headers.get('set-cookie'), /; HttpOnly; SameSite=Lax; .*; Secure$/);
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const save = await api(srv.url, 'PUT', '/api/settings', { cookie, body: { prefs: { targetLang: '한국어' } }, headers: proxied });
+    assert.equal(save.status, 200);
+    const other = await api(srv.url, 'PUT', '/api/settings', { cookie, body: {}, headers: { ...proxied, Origin: 'https://evil.example' } });
+    assert.equal(other.status, 403);
+  } finally {
+    await srv.stop();
+  }
+});
+
+test('a PAPERGLOSS_PASSWORD under 12 characters stops the server from starting', async () => {
+  await assert.rejects(startServer({ env: { PAPERGLOSS_PASSWORD: 'short-pw' } }), /shorter than 12 characters/);
+});
+
+test('the sign-in limit counts an IPv6 /64 as one client', async () => {
+  const srv = await startServer({ env: { PAPERGLOSS_PASSWORD: PW } });
+  try {
+    const attempt = (ip) => api(srv.url, 'POST', '/api/login', { body: { password: 'nope' }, headers: { 'X-Forwarded-For': ip } });
+    for (let i = 0; i < 10; i++) assert.equal((await attempt(`2001:db8:1:2::${i + 1}`)).status, 401);
+    assert.equal((await attempt('2001:db8:1:2:ffff:ffff:ffff:ffff')).status, 429);
+    assert.equal((await attempt('2001:db8:1:3::1')).status, 401, 'the next /64 is another client');
+  } finally {
+    await srv.stop();
+  }
+});
+
 const lan = lanAddress();
 test('X-Forwarded-* headers from other peers are ignored', { skip: !lan && 'no non-loopback address' }, async () => {
   const srv = await startServer({ env: { HOST: lan, PAPERGLOSS_PASSWORD: PW } });
@@ -146,5 +181,31 @@ test('parallel guesses cannot get past the limit', async () => {
     assert.equal(statuses.filter((s) => s === 429).length, 20);
   } finally {
     await srv.stop();
+  }
+});
+
+test('another app of the same code has its own name, icons, sign-in cookie and backups; the first keeps its own', async () => {
+  const mill = await startServer({ env: { PAPERGLOSS_PASSWORD: PW, APP_ID: 'mill', APP_NAME: "Sparrow's Mill" } });
+  const nest = await startServer({ env: { PAPERGLOSS_PASSWORD: PW } });
+  try {
+    for (const [srv, name, icon, cookie, backups] of [
+      [mill, "Sparrow's Mill", 'mill', /^pr_session_mill=/, ['mill', 'auto']],
+      [nest, "Sparrow's Nest", 'nest', /^pr_session=/, ['auto']],
+    ]) {
+      const page = await (await fetch(`${srv.url}/`)).text();
+      assert.ok(page.includes(`<title>${name}</title>`) && page.includes(`<meta name="application-name" content="${name}" />`));
+      assert.ok(page.includes(`href="/icons/${icon}.svg"`) && page.includes(`href="/icons/${icon}-touch.png"`));
+      assert.ok(!page.includes('{{'));
+      const manifest = await (await fetch(`${srv.url}/manifest.webmanifest`)).json();
+      assert.deepEqual([manifest.name, manifest.short_name], [name, name]);
+      for (const { src } of manifest.icons) assert.equal((await fetch(`${srv.url}${src}`)).status, 200, src);
+      assert.ok(manifest.icons.every(({ src }) => src.startsWith(`/icons/${icon}`)));
+      assert.match(await signIn(srv.url, PW), cookie);
+      assert.ok(await waitFor(() => fs.existsSync(path.join(srv.backupDir, ...backups)), 10000));
+      assert.match(srv.output(), new RegExp(`${name} is running`));
+    }
+  } finally {
+    await mill.stop();
+    await nest.stop();
   }
 });

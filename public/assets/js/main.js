@@ -32,9 +32,10 @@ async function route() {
     });
     return;
   }
-  const m = location.hash.match(/^#\/read\/([^?]+)/);
+  // (?at=<block>: a place to open the book at, a bookmark on the home page)
+  const m = location.hash.match(/^#\/read\/([^?]+)(?:\?(.*))?/);
   try {
-    current = m ? await openReader(app, decodeURIComponent(m[1])) : await renderHome(app);
+    current = m ? await openReader(app, decodeURIComponent(m[1]), { at: new URLSearchParams(m[2] || '').get('at') }) : await renderHome(app);
   } catch (err) {
     console.error(err);
     toast(err.message || t('common.pageLoadFailed'), { type: 'error' });

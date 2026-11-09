@@ -46,6 +46,9 @@ function toMessage(m) {
   return { role: 'user', content: parts };
 }
 
+// Only a finished answer counts as end_turn; a stream that just stops is "incomplete".
+const stopReasonOf = (finish) => (/^(stop|end_turn)$/i.test(finish || '') ? 'end_turn' : finish === 'length' ? 'max_tokens' : finish || 'incomplete');
+
 function extractMessage(text) {
   try {
     const data = JSON.parse(text);
@@ -76,10 +79,12 @@ async function post(url, llm, body, signal) {
 
 export async function streamOpenAI({ llm, system, messages, signal }, emit) {
   if (!llm.model) throw new LlmHttpError(400, 'llm.noModel', {}, 'no_model');
+  // Book threads send the system prompt as Anthropic-style text blocks.
+  const sys = Array.isArray(system) ? system.map((b) => b.text).join('\n\n') : system;
   const body = {
     model: llm.model,
     stream: true,
-    messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages.map(toMessage)],
+    messages: [...(sys ? [{ role: 'system', content: sys }] : []), ...messages.map(toMessage)],
   };
   if (llm.temperature != null) body.temperature = llm.temperature;
   if (llm.maxTokens) body.max_tokens = llm.maxTokens;
@@ -95,7 +100,7 @@ export async function streamOpenAI({ llm, system, messages, signal }, emit) {
     const choice = data.choices?.[0];
     emit({ t: 'start', model: data.model || llm.model });
     if (choice?.message?.content) emit({ t: 'delta', text: choice.message.content });
-    emit({ t: 'done', stopReason: choice?.finish_reason === 'length' ? 'max_tokens' : 'end_turn', model: data.model || llm.model, usage: data.usage || null, raw: null });
+    emit({ t: 'done', stopReason: stopReasonOf(choice?.finish_reason), model: data.model || llm.model, usage: data.usage || null, raw: null });
     return;
   }
 
@@ -143,7 +148,7 @@ export async function streamOpenAI({ llm, system, messages, signal }, emit) {
   }
   emit({
     t: 'done',
-    stopReason: finish === 'length' ? 'max_tokens' : 'end_turn',
+    stopReason: stopReasonOf(finish),
     model: model || llm.model,
     usage,
     raw: null,

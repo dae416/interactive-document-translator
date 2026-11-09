@@ -3,9 +3,12 @@ import { icon } from './icons.js';
 import { PRESETS, presetLabel } from './providers.js';
 import { applyTheme, confirmDialog, h, iconButton, local, toast } from './ui.js';
 import { LANGS as UI_LANGS, getLang, setLang, t } from './i18n.js';
+import { DEFAULT_LANGS, autonym, langName } from './langs.js';
 
 
 const LANGS = ['简体中文', '繁體中文', 'English', '日本語', '한국어', 'Français', 'Deutsch', 'Español', 'Русский'];
+// Codes offered for a book's languages (any BCP-47 code may be typed).
+const BOOK_LANGS = ['en', 'ko', 'ja', 'zh-Hans', 'zh-Hant', 'fr', 'de', 'es', 'it', 'pt', 'ru', 'nl', 'la', 'el', 'he', 'ar'];
 const EFFORTS = ['auto', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 function field(label, control, hint) {
@@ -123,9 +126,11 @@ export async function openSettings({ section } = {}) {
     }
   });
 
+  // With Claude, "auto" lets the server pick Haiku, Sonnet or Opus for each request.
   const showModelOptions = (models) => {
-    modelPick.replaceChildren(h('option', { value: '', text: t('settings.pickModel', { n: models.length }) }), ...models.map((m) => h('option', { value: m, text: m })));
-    modelPick.hidden = !models.length;
+    const auto = protocol === 'anthropic' ? [h('option', { value: 'auto', text: t('settings.modelAuto') })] : [];
+    modelPick.replaceChildren(h('option', { value: '', text: t('settings.pickModel', { n: models.length + auto.length }) }), ...auto, ...models.map((m) => h('option', { value: m, text: m })));
+    modelPick.hidden = !models.length && !auto.length;
   };
   modelPick.addEventListener('change', () => {
     if (modelPick.value) modelInput.value = modelPick.value;
@@ -217,10 +222,17 @@ export async function openSettings({ section } = {}) {
   const promptAsk = h('textarea', { class: 'input', placeholder: t('settings.promptPlaceholder'), rows: '3' });
   promptAsk.value = prefs.prompts?.ask || '';
 
-  const langSel = select(
-    LANGS.map((l) => [l, l]),
-    LANGS.includes(prefs.targetLang) ? prefs.targetLang : '简体中文',
-  );
+  // The answer language: one of LANGS (or what was set before), or '' for the own name of the
+  // language books are translated into (settings.answerFollows).
+  const answerOpts = [['', t('settings.sameAsBooks', { name: autonym(settings.langs?.tgt || DEFAULT_LANGS.tgt) })], ...LANGS.map((l) => [l, l])];
+  if (!settings.answerFollows && prefs.targetLang && !LANGS.includes(prefs.targetLang)) answerOpts.push([prefs.targetLang, prefs.targetLang]);
+  const langSel = select(answerOpts, settings.answerFollows ? '' : prefs.targetLang || '');
+  // Books' languages, as codes: those set here, else the server's (envLangs, as placeholders).
+  const env = settings.envLangs || DEFAULT_LANGS;
+  const codeInput = (value, placeholder) => h('input', { class: 'input', value: value || '', placeholder, list: 'book-langs', spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off' });
+  const srcInput = codeInput(prefs.langs?.src, env.src);
+  const tgtInput = codeInput(prefs.langs?.tgt, env.tgt);
+  const codes = h('datalist', { id: 'book-langs' }, BOOK_LANGS.map((c) => h('option', { value: c, label: langName(c, getLang()) })));
 
   // ---- reading ----
   const themeSeg = h('div', { class: 'seg' });
@@ -235,12 +247,24 @@ export async function openSettings({ section } = {}) {
     });
     themeSeg.append(b);
   }
+  // What a tap pairs: a clause, or a whole sentence (per device).
+  const unitSeg = h('div', { class: 'seg' });
+  const unit = local.get('tapUnit', 'clause');
+  for (const v of ['clause', 'sentence']) {
+    const b = h('button', { type: 'button', text: t(`tapUnit.${v}`), class: v === unit ? 'on' : '' });
+    b.addEventListener('click', () => {
+      unitSeg.querySelectorAll('button').forEach((x) => x.classList.remove('on'));
+      b.classList.add('on');
+      local.set('tapUnit', v);
+    });
+    unitSeg.append(b);
+  }
   const htmlSwitch = h('input', { type: 'checkbox' });
   htmlSwitch.checked = prefs.preferHtml !== false;
   // Per-device reading options take effect right away.
-  const deviceSwitch = (key, label, hint) => {
+  const deviceSwitch = (key, label, hint, fallback = false) => {
     const input = h('input', { type: 'checkbox' });
-    input.checked = !!local.get(key, false);
+    input.checked = !!local.get(key, fallback);
     input.addEventListener('change', () => {
       local.set(key, input.checked);
       document.dispatchEvent(new CustomEvent('readerprefs'));
@@ -308,6 +332,14 @@ export async function openSettings({ section } = {}) {
     h('h3', { text: t('settings.answers') }),
     field(t('settings.targetLang'), langSel),
   );
+  const booksGroup = h(
+    'section',
+    { class: 'settings-group' },
+    h('h3', { text: t('settings.books') }),
+    field(t('settings.bookSource'), srcInput),
+    field(t('settings.bookTarget'), tgtInput, t('settings.bookLangsHint', env)),
+    codes,
+  );
   const advanced = h(
     'details',
     { class: 'advanced' },
@@ -332,6 +364,9 @@ export async function openSettings({ section } = {}) {
       h('label', { class: 'switch' }, htmlSwitch, h('span')),
     ),
     deviceSwitch('instantTranslate', t('reader.instant'), t('settings.instantHint')),
+    deviceSwitch('tapTranslate', t('reader.tap'), t('settings.tapHint'), true),
+    h('div', { class: 'switch-row' }, h('div', {}, h('div', { text: t('settings.tapUnit') }), h('div', { class: 'hint', text: t('settings.tapUnitHint') })), unitSeg),
+    deviceSwitch('tapAi', t('settings.tapAi'), t('settings.tapAiHint'), true),
     deviceSwitch('barPinned', t('reader.pinBar'), t('settings.pinBarHint')),
   );
   const accountGroup = h(
@@ -343,7 +378,7 @@ export async function openSettings({ section } = {}) {
       : h('div', { class: 'field' }, h('label', { text: t('settings.changePassword') }), oldPw, newPw, h('div', {}, pwBtn)),
     h('div', { style: { marginTop: '14px' } }, logoutBtn),
   );
-  body.append(uiGroup, aiGroup, answerGroup, advanced, readGroup, accountGroup);
+  body.append(uiGroup, aiGroup, answerGroup, booksGroup, advanced, readGroup, accountGroup);
   refreshProtocol();
   refreshKeyField();
   if (llm.preset === 'anthropic') showModelOptions(PRESETS[0].models);
@@ -367,6 +402,7 @@ export async function openSettings({ section } = {}) {
         llm: llmPatch,
         prefs: {
           targetLang: langSel.value,
+          langs: { src: srcInput.value.trim(), tgt: tgtInput.value.trim() },
           fullTextLimit: Number(fullLimitInput.value) || 120000,
           preferHtml: htmlSwitch.checked,
           prompts: { translate: promptTranslate.value, explain: promptExplain.value, ask: promptAsk.value },

@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { PAPERS_DIR, TMP_DIR } from './config.js';
-import { HttpError, collapseWs, exists, randomId, readJsonFile, sha1, withLock, writeJsonFile } from './util.js';
+import { PAPERS_DIR, TMP_DIR, bookLangs, checkLangs } from './config.js';
+import { HttpError, collapseWs, exists, randomId, readJsonFile, renameFile, sha1, withLock, writeJsonFile } from './util.js';
 import { tr } from './i18n.js';
+import { importWebPage, startBook } from './book.js';
 import {
   downloadArxivPdf,
   downloadPdfFromUrl,
@@ -17,6 +18,10 @@ import {
 
 const ID_RE = /^[a-z0-9][a-z0-9._-]{0,119}$/i;
 const THREAD_ID_RE = /^[a-z0-9_-]{6,48}$/i;
+// A picture cut from a page (p<page>-<k>), or from a page of the original a translated chapter
+// was made from (o<page>-<k>), or that page itself (o<page>, the blocks' data-orig: book.js). The
+// reader's FIGURE (htmlview.js) takes the first two, which stand in the text; the page only here.
+const FIGURE_RE = /^(p\d{1,4}-\d{1,2}|o\d{1,4}(-\d{1,2})?)\.png$/;
 const MAX_UPLOAD = 150 * 1024 * 1024;
 
 export function checkId(id) {
@@ -27,7 +32,16 @@ export function checkId(id) {
 const dirOf = (id) => path.join(PAPERS_DIR, checkId(id));
 const metaFile = (id) => path.join(dirOf(id), 'meta.json');
 export const pdfFile = (id) => path.join(dirOf(id), 'paper.pdf');
-const htmlFile = (id) => path.join(dirOf(id), 'paper.html');
+export const htmlFile = (id) => path.join(dirOf(id), 'paper.html');
+// Text of an uploaded .txt book.
+export const sourceFile = (id) => path.join(dirOf(id), 'source.txt');
+const bookFile = (id) => path.join(dirOf(id), 'book.json');
+
+// A picture of a scanned book (book.js), "p<page>-<k>.png"; any other name is refused.
+export function figureFile(id, name) {
+  if (!FIGURE_RE.test(name)) throw new HttpError(400, 'common.badUrl');
+  return path.join(dirOf(id), 'figures', name);
+}
 
 export async function getMeta(id) {
   const meta = await readJsonFile(metaFile(id));
@@ -35,9 +49,55 @@ export async function getMeta(id) {
   return meta;
 }
 
-async function saveMeta(meta) {
+export async function saveMeta(meta) {
   await writeJsonFile(metaFile(meta.id), meta);
   return meta;
+}
+
+export const metaExists = (id) => exists(metaFile(id));
+
+// book.json holds a book's text, chapter summaries and brief.
+export async function readBook(id) {
+  const book = await readJsonFile(bookFile(id));
+  if (!book) throw new HttpError(404, 'paper.notFound');
+  return book;
+}
+
+export const writeBook = (id, book) => writeJsonFile(bookFile(id), book);
+
+// Where blocks stand in a book, each a share of its text from 0 (its start) to 1: the ribbons of its
+// bookmarks on the home page. The translation of a block stands where the block does; a block the
+// book no longer has stands nowhere.
+export async function placesOf(id, blocks) {
+  const { chapters } = await readBook(id);
+  const start = new Map();
+  let total = 0;
+  for (const c of chapters) {
+    c.blocks.forEach((b, i) => {
+      start.set(`${c.id}.${i}`, total);
+      total += b.x.length;
+    });
+  }
+  const place = (b) => {
+    const at = start.get(b.replace(/k$/, ''));
+    return at === undefined ? null : at / total;
+  };
+  return Object.fromEntries(blocks.map((b) => [b, place(b)]));
+}
+
+// null when there is no book.json yet; an unreadable one (a placeholder) throws.
+export const peekBook = (id) => readJsonFile(bookFile(id));
+
+export const emptyBook = () => ({ version: 1, chapters: [], brief: '', summaries: {}, usage: { input_tokens: 0, output_tokens: 0 }, next: null });
+
+// Every read-modify-write of book.json re-reads it under this lock; model calls stay outside.
+export function updateBook(id, fn) {
+  return withLock(`book:${id}`, async () => {
+    const book = await readBook(id);
+    const next = (await fn(book)) || book;
+    await writeBook(id, next);
+    return next;
+  });
 }
 
 export function updateMeta(id, fn) {
@@ -58,8 +118,13 @@ export async function listPapers() {
   const metas = [];
   for (const name of names) {
     if (!ID_RE.test(name)) continue;
-    const meta = await readJsonFile(path.join(PAPERS_DIR, name, 'meta.json'));
-    if (meta) metas.push(meta);
+    try {
+      const meta = await readJsonFile(path.join(PAPERS_DIR, name, 'meta.json'));
+      if (meta) metas.push(meta);
+    } catch (err) {
+      // One unreadable entry (e.g. a cloud-sync placeholder) must not hide the whole library.
+      console.warn(`[library] skipped ${name}: ${err.key || err.message}`);
+    }
   }
   metas.sort((a, b) => (b.lastOpenedAt || b.createdAt).localeCompare(a.lastOpenedAt || a.createdAt));
   return metas.map(summary);
@@ -76,7 +141,7 @@ function newTmpPath() {
 
 async function finalizePdf(id, tmp) {
   await fsp.mkdir(dirOf(id), { recursive: true });
-  await fsp.rename(tmp, pdfFile(id));
+  await renameFile(tmp, pdfFile(id));
 }
 
 function now() {
@@ -87,30 +152,41 @@ function now() {
 
 const inflight = new Map();
 
-export async function importFromInput(input, lang = 'zh') {
+export async function importFromInput(input, lang = 'zh', follow = 0) {
   const parsed = parseInput(input);
   const key = JSON.stringify(parsed);
   if (inflight.has(key)) return inflight.get(key);
-  const job = doImport(parsed, lang).finally(() => inflight.delete(key));
+  const job = doImport(parsed, lang, follow).finally(() => inflight.delete(key));
   inflight.set(key, job);
   return job;
 }
 
-async function existingOrNull(id) {
-  if (!(await exists(metaFile(id))) || !(await exists(pdfFile(id)))) return null;
-  return updateMeta(id, (m) => {
-    m.lastOpenedAt = now();
-  });
+// A book exists once its meta.json and book.json are there (and paper.pdf for PDF books).
+// One that is ready or still processing is reused as it is; one that failed is imported again.
+async function reusable(id, meta) {
+  if (!meta) return false;
+  if (meta.kind !== 'book') return exists(pdfFile(id));
+  if (meta.book?.status === 'error' || !(await exists(bookFile(id)))) return false;
+  return meta.source !== 'upload' || exists(pdfFile(id));
 }
 
-async function doImport(parsed, lang) {
+const reopen = (id) =>
+  updateMeta(id, (m) => {
+    m.lastOpenedAt = now();
+  });
+
+async function existingOrNull(id) {
+  return (await reusable(id, await readJsonFile(metaFile(id)))) ? reopen(id) : null;
+}
+
+async function doImport(parsed, lang, follow) {
   await fsp.mkdir(TMP_DIR, { recursive: true });
   if (parsed.kind === 'arxiv') return importArxiv(parsed.id, parsed.version);
   if (parsed.kind === 'openreview') return importOpenReview(parsed.id);
   if (parsed.kind === 'doi') {
-    return importUrl(`https://doi.org/${parsed.doi}`, { source: 'doi', sourceId: parsed.doi, idKey: `doi:${parsed.doi.toLowerCase()}`, lang });
+    return importUrl(`https://doi.org/${parsed.doi}`, { source: 'doi', sourceId: parsed.doi, idKey: `doi:${parsed.doi.toLowerCase()}`, lang, follow });
   }
-  return importUrl(parsed.url, { source: parsed.source || 'url', sourceId: parsed.sourceId || '', lang });
+  return importUrl(parsed.url, { source: parsed.source || 'url', sourceId: parsed.sourceId || '', lang, follow });
 }
 
 async function importArxiv(arxivId, version) {
@@ -171,12 +247,22 @@ async function importOpenReview(orId) {
   });
 }
 
-async function importUrl(url, { source, sourceId, idKey, lang }) {
+async function importUrl(url, { source, sourceId, idKey, lang, follow }) {
   const id = `${source === 'doi' ? 'doi' : 'url'}-${sha1(idKey || url).slice(0, 12)}`;
   const existing = await existingOrNull(id);
   if (existing) return existing;
+  // A page without a PDF becomes a web book.
+  const webId = `web-${sha1(url).slice(0, 12)}`;
+  const web = await existingOrNull(webId);
+  if (web) return web;
   const tmp = newTmpPath();
-  const pdf = await downloadPdfFromUrl(url, tmp);
+  let pdf;
+  try {
+    pdf = await downloadPdfFromUrl(url, tmp);
+  } catch (err) {
+    if (err.page) return importWebPage(webId, err.page, { url, follow, lang });
+    throw err;
+  }
   await finalizePdf(id, tmp);
   let fallbackTitle = new URL(pdf.finalUrl).pathname.split('/').pop() || '';
   try {
@@ -247,40 +333,104 @@ export async function importUpload(req, lang = 'zh') {
     await fsp.rm(tmp, { force: true });
     throw err;
   });
-  if (!head.includes('%PDF-')) {
+  // Every upload becomes a book: a PDF, or a .txt / text/plain file that is valid UTF-8.
+  const isPdf = head.includes('%PDF-');
+  const textLike = /\.txt$/i.test(fileName) || /^text\/plain\b/i.test(String(req.headers['content-type'] || ''));
+  if (!isPdf && !(textLike && (await isUtf8File(tmp)))) {
     await fsp.rm(tmp, { force: true });
-    throw new HttpError(422, 'upload.notPdf');
+    throw new HttpError(422, 'upload.notBook');
   }
-  const id = `pdf-${hash.digest('hex').slice(0, 12)}`;
-  const existing = await existingOrNull(id);
-  if (existing) {
+  const id = `${isPdf ? 'pdf' : 'txt'}-${hash.digest('hex').slice(0, 12)}`;
+  return addBook(tmp, id, { isPdf, fileName, size, lang });
+}
+
+// A PDF from a link (one the AI found) as a book.
+export async function importBookUrl(url, { title = '', authors = [] } = {}, lang = 'en') {
+  await fsp.mkdir(TMP_DIR, { recursive: true });
+  const tmp = newTmpPath();
+  const pdf = await downloadPdfFromUrl(url, tmp);
+  const fileName = path.basename(new URL(pdf.finalUrl).pathname) || 'book.pdf';
+  return addBook(tmp, `pdf-${pdf.sha1.slice(0, 12)}`, { isPdf: true, fileName, size: pdf.size, lang, title, authors, absUrl: url, pdfUrl: pdf.finalUrl });
+}
+
+// The file `tmp`, a PDF or a text, as the book `id`. `title`: one known already, else the file's name
+// serves until the PDF's own is read.
+async function addBook(tmp, id, { isPdf, fileName, size, lang, title = '', authors = [], absUrl = '', pdfUrl = '' }) {
+  // A failed book, or the same PDF uploaded earlier as a paper, goes through the pipeline again;
+  // chapters it already has are kept (and an unreadable book.json is an error, not overwritten).
+  let prev;
+  let current;
+  try {
+    prev = await readJsonFile(metaFile(id));
+    current = await peekBook(id);
+  } catch (err) {
     await fsp.rm(tmp, { force: true });
-    return existing;
+    throw err;
   }
-  await finalizePdf(id, tmp);
-  const title = collapseWs(fileName.replace(/\.pdf$/i, '').replace(/[_]+/g, ' ')) || tr(lang, 'paper.untitled');
-  return saveMeta({
+  if (prev?.kind === 'book' && (await reusable(id, prev))) {
+    await fsp.rm(tmp, { force: true });
+    return reopen(id);
+  }
+  await fsp.mkdir(dirOf(id), { recursive: true });
+  await renameFile(tmp, isPdf ? pdfFile(id) : sourceFile(id));
+  const named = collapseWs(fileName.replace(/\.(pdf|txt)$/i, '').replace(/[_]+/g, ' ')) || tr(lang, 'paper.untitled');
+  if (!current) await writeBook(id, emptyBook());
+  const meta = await saveMeta({
     id,
-    source: 'upload',
+    kind: 'book',
+    source: isPdf ? 'upload' : 'txt',
     sourceId: fileName,
-    title,
-    titleSource: 'filename',
-    authors: [],
+    title: title || named,
+    titleSource: title ? 'source' : 'filename',
+    authors,
     abstract: '',
     published: '',
-    absUrl: '',
-    pdfUrl: '',
+    absUrl,
+    pdfUrl,
     fileSize: size,
-    createdAt: now(),
+    createdAt: prev?.createdAt || now(),
     lastOpenedAt: now(),
+    ...(prev?.progress ? { progress: prev.progress } : {}),
+    book: {
+      status: 'processing',
+      step: 'extract',
+      progress: 0,
+      error: '',
+      chapters: current?.chapters?.length || 0,
+      ocr: false,
+      summaries: Object.keys(current?.summaries || {}).length,
+    },
     html: { status: 'none' },
   });
+  startBook(id, lang);
+  return meta;
+}
+
+async function isUtf8File(file) {
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(await fsp.readFile(file));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ---- metadata edits --------------------------------------------------------
 
 export async function patchPaper(id, patch = {}) {
+  // A book's own languages, { src, tgt } (both codes), checked before anything is written; null: the
+  // ones Settings name. Once chapters of it are translated (or on their way) its target stays, so a
+  // chapter is never in two languages; its source may still change.
+  const langs = patch.langs && typeof patch.langs === 'object' ? checkLangs({ src: patch.langs.src || null, tgt: patch.langs.tgt || null }) : null;
+  if (langs && !(langs.src && langs.tgt)) throw new HttpError(400, 'langs.unknown', { code: '' });
   return updateMeta(id, (m) => {
+    if ((langs || patch.langs === null) && m.kind === 'book') {
+      const now = bookLangs(m).tgt;
+      const begun = Object.values(m.book?.translations || {}).some((t) => [t, ...(t?.parts || [])].some((s) => s && (s.status === 'ready' || s.status === 'queued' || s.status === 'working' || s.progress > 0)));
+      if (begun && (langs ? langs.tgt : bookLangs({}).tgt) !== now) throw new HttpError(409, 'langs.translated', { lang: now });
+      if (langs) m.langs = langs;
+      else delete m.langs;
+    }
     if (typeof patch.title === 'string' && patch.title.trim()) {
       m.title = collapseWs(patch.title).slice(0, 500);
       m.titleSource = patch.titleSource === 'pdf' ? 'pdf' : 'user';
@@ -295,13 +445,17 @@ export async function patchPaper(id, patch = {}) {
     }
     if (patch.opened) m.lastOpenedAt = now();
     if (typeof patch.pages === 'number') m.pages = patch.pages;
+    // Put away from the home page's list, and why; null takes it out again.
+    if (patch.shelf === 'read' || patch.shelf === 'unneeded') m.shelf = patch.shelf;
+    else if (patch.shelf === null) delete m.shelf;
   });
 }
 
 export async function deletePaper(id) {
   const dir = dirOf(id);
   if (!(await exists(dir))) throw new HttpError(404, 'paper.notFound');
-  await fsp.rm(dir, { recursive: true, force: true });
+  // Retries cover Windows, where a sync client or a virus scanner may hold a file open for a moment.
+  await fsp.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
 // ---- HTML rendering ----------------------------------------------------------
@@ -336,7 +490,9 @@ export function ensureHtml(id) {
 export async function readHtml(id) {
   const info = await ensureHtml(id);
   if (info?.status !== 'ok') return null;
-  return { html: await fsp.readFile(htmlFile(id), 'utf8'), baseUrl: info.baseUrl, source: info.source };
+  const html = await fsp.readFile(htmlFile(id), 'utf8');
+  if (!html) throw new HttpError(503, 'storage.unreadable');
+  return { html, baseUrl: info.baseUrl, source: info.source };
 }
 
 const ASSET_HOSTS = new Set(['arxiv.org', 'www.arxiv.org', 'ar5iv.labs.arxiv.org', 'ar5iv.org', 'static.arxiv.org']);

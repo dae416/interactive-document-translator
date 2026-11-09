@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { api, readConfig, recordingServer, signIn, startServer, tempDir } from './helpers.js';
+import { anthropicStub, api, chat, readConfig, recordingServer, signIn, startServer, tempDir } from './helpers.js';
 
 const PW = 'test-password';
 const models = (req, res) => res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"data":[{"id":"m1"}]}');
@@ -96,5 +96,30 @@ test('single-provider settings from earlier versions carry over', async () => {
     await srv.stop();
     await a.close();
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an Anthropic provider on another base URL never gets the environment key', async () => {
+  const stub = await anthropicStub();
+  const srv = await startServer({ env: { PAPERGLOSS_PASSWORD: PW, ANTHROPIC_API_KEY: 'sk-ant-env-secret' } });
+  try {
+    const cookie = await signIn(srv.url, PW);
+    const llm = { preset: 'anthropic', protocol: 'anthropic', baseUrl: stub.url, model: 'claude-opus-5-5' };
+    assert.equal((await api(srv.url, 'PUT', '/api/settings', { cookie, body: { llm } })).data.llm.hasKey, false);
+    const check = await api(srv.url, 'POST', '/api/llm/test', { cookie, body: {} });
+    assert.equal(check.data.code, 'no_key');
+    await api(srv.url, 'POST', '/api/llm/models', { cookie, body: {} });
+    const res = await chat(srv.url, cookie, { action: 'ask', messages: [{ role: 'user', content: 'hi' }] });
+    assert.equal(res.events.at(-1).t, 'error');
+    assert.equal(stub.headers.length, 0, 'nothing was sent without a key of its own');
+
+    // A key saved for that server is the one it gets.
+    await api(srv.url, 'PUT', '/api/settings', { cookie, body: { llm: { apiKey: 'sk-ant-saved-here' } } });
+    assert.equal((await api(srv.url, 'POST', '/api/llm/test', { cookie, body: {} })).status, 200);
+    assert.equal(stub.headers.at(-1)['x-api-key'], 'sk-ant-saved-here');
+    assert.ok(!JSON.stringify(stub.headers).includes('sk-ant-env-secret'));
+  } finally {
+    await srv.stop();
+    await stub.close();
   }
 });

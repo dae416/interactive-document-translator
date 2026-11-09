@@ -1,6 +1,7 @@
 // AI providers: the presets offered in Settings, the ones saved on the server (each with
 // its own key, kept there), and a quick switcher for when one of them is down.
 import { api, cachedSettings, getSettings, setSettingsCache } from './api.js';
+import { modelLabel } from './ai.js';
 import { openMenu, toast } from './ui.js';
 import { t } from './i18n.js';
 
@@ -10,7 +11,8 @@ export const PRESETS = [
     nameKey: 'preset.anthropic',
     protocol: 'anthropic',
     baseUrl: 'https://api.anthropic.com',
-    model: 'claude-opus-5-5',
+    // The server picks Haiku, Sonnet or Opus for each request.
+    model: 'auto',
     models: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'],
   },
   { id: 'openai', name: 'OpenAI', protocol: 'openai', baseUrl: 'https://api.openai.com/v1' },
@@ -68,7 +70,7 @@ export async function openProviderMenu(anchor, { onSwitched, openSettings } = {}
   const items = usableProviders().map((p) => ({
     icon: p.active ? 'check' : 'blank',
     label: p.label,
-    right: p.model,
+    right: modelLabel(p.model),
     onClick: async () => {
       if (p.active) return onSwitched?.(p.id);
       try {

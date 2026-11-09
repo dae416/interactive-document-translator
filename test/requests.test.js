@@ -90,7 +90,7 @@ test('papers cannot be imported from local addresses unless allowed', async () =
   }
 });
 
-test('internal errors are reported without details', async () => {
+test('internal errors are reported without details; a JSON body that is no object is a bad request', async () => {
   const dir = tempDir();
   fs.mkdirSync(path.join(dir, 'papers', 'broken'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'papers', 'broken', 'meta.json'), '{ not json');
@@ -100,6 +100,9 @@ test('internal errors are reported without details', async () => {
     const res = await api(srv.url, 'GET', '/api/papers/broken', { cookie, headers: { 'X-UI-Lang': 'en' } });
     assert.equal(res.status, 500);
     assert.equal(res.data.error, 'Internal server error');
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+    const nul = await api(srv.url, 'PUT', '/api/settings', { cookie, body: 'null', headers: { 'X-UI-Lang': 'en' } });
+    assert.deepEqual([nul.status, nul.data.error], [400, 'Malformed request (invalid JSON)']);
   } finally {
     await srv.stop();
     fs.rmSync(dir, { recursive: true, force: true });

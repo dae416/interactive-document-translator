@@ -1,6 +1,8 @@
 import { api } from './api.js';
 import { h, isCoarse, loadCss } from './ui.js';
 import { contextAround, normalizeText } from './selection.js';
+import { tabLabel } from './htmlview.js';
+import { t } from './i18n.js';
 
 // pdf.js's TouchManager relies on AbortSignal.any (Safari 17.4+).
 if (typeof AbortSignal !== 'undefined' && !AbortSignal.any) {
@@ -101,10 +103,15 @@ export class PdfView {
 
     // Internal links (citations, figure refs) open a preview first instead of jumping.
     const goTo = linkService.goToDestination.bind(linkService);
-    this.goToDestDirect = goTo;
+    this.goToDestDirect = async (dest) => {
+      const top = this.scrollEl.scrollTop;
+      await goTo(dest);
+      // (a destination that leads nowhere moves nothing)
+      if (this.scrollEl.scrollTop !== top) this.belowTabs();
+    };
     linkService.goToDestination = async (dest) => {
       if (this.onInternalLink) return this.onInternalLink(dest);
-      return this.jumpWithBack(() => goTo(dest));
+      return this.jumpWithBack(() => this.goToDestDirect(dest));
     };
 
     eventBus.on('pagechanging', ({ pageNumber }) => this.onPageChange?.(pageNumber, this.pdf?.numPages));
@@ -137,9 +144,54 @@ export class PdfView {
     viewer.setDocument(this.pdf);
     linkService.setDocument(this.pdf, null);
     await pagesInit;
+    // The tabs before the place read: the room they take above the first page would move it.
+    // ponytail: no more than a second's wait for the bookmarks; tabs later than that move it 43px.
+    if (this.paper.kind === 'book') await Promise.race([this.setupTabs().catch(() => {}), new Promise((r) => setTimeout(r, 1000))]);
     this.restore(saved);
     this.setupGestures();
     return this;
+  }
+
+  // A book's chapters as tabs over its pages, the one being read marked, as in its text.
+  // ponytail: they come from the PDF's own top-level bookmarks; a book whose PDF has none, or only
+  // one (a title over its chapters), gets no tabs here (upgrade: the pages of the server's chapters).
+  async setupTabs() {
+    const items = (await this.getOutline(1)).filter((it) => it.page);
+    if (items.length < 2 || this.ac.signal.aborted) return;
+    this.pageTabs = items.map((it, i) => ({
+      page: it.page,
+      el: h('button', { class: 'chapter-tab', type: 'button', role: 'tab', title: it.title, onClick: () => this.openTab(it.page) }, h('span', { text: tabLabel(i + 1, it.title) })),
+    }));
+    this.pageTabStrip = h('div', { class: 'chapter-tabs pdf-tabs', role: 'tablist', 'aria-label': t('reader.chapters') }, this.pageTabs.map((x) => x.el));
+    this.host.append(this.pageTabStrip);
+    this.scrollEl.classList.add('has-tabs');
+    this.markTab(this.currentPage);
+    this.eventBus.on('pagechanging', ({ pageNumber }) => this.markTab(pageNumber));
+  }
+
+  // A chapter from its first page; the keys then scroll the pages, not the strip.
+  openTab(page) {
+    this.goToPage(page);
+    this.scrollEl.focus({ preventScroll: true });
+  }
+
+  // pdf.js puts a page or place jumped to at the very top: with tabs, it goes just under them
+  // (under where they are with the toolbar shown, so its top is never hidden).
+  belowTabs() {
+    if (this.pageTabStrip) this.scrollEl.scrollTop -= this.pageTabStrip.offsetTop + this.pageTabStrip.offsetHeight;
+  }
+
+  // The chapter of the last tab starting at or before `page`, whatever the bookmarks' order.
+  markTab(page) {
+    const on = this.pageTabs.reduce((a, x) => (x.page <= page && (!a || x.page >= a.page) ? x : a), null) || this.pageTabs[0];
+    if (on === this.tabOn) return;
+    this.tabOn = on;
+    for (const x of this.pageTabs) {
+      x.el.classList.toggle('on', x === on);
+      x.el.setAttribute('aria-selected', String(x === on));
+    }
+    // to the middle of the strip
+    this.pageTabStrip.scrollLeft = on.el.offsetLeft - (this.pageTabStrip.clientWidth - on.el.offsetWidth) / 2;
   }
 
   get numPages() {
@@ -290,7 +342,7 @@ export class PdfView {
   fitWidth() {
     const page = this.currentPage;
     this.viewer.currentScaleValue = 'page-width';
-    this.viewer.currentPageNumber = page;
+    this.goToPage(page);
   }
 
   isZoomedIn() {
@@ -416,6 +468,7 @@ export class PdfView {
 
   goToPage(n) {
     this.viewer.currentPageNumber = Math.max(1, Math.min(this.numPages, n));
+    this.belowTabs();
   }
 
   goToLocation(loc) {
@@ -495,14 +548,14 @@ export class PdfView {
     return { page: n, text: normalizeText(out.join('\n')) };
   }
 
-  async getOutline() {
+  async getOutline(depth = 3) {
     const outline = await this.pdf.getOutline();
     if (!outline?.length) return [];
     const flat = [];
     const walk = (list, level) => {
       for (const item of list) {
         flat.push({ title: item.title, dest: item.dest, level });
-        if (item.items?.length && level < 3) walk(item.items, level + 1);
+        if (item.items?.length && level < depth) walk(item.items, level + 1);
       }
     };
     walk(outline, 1);
@@ -624,5 +677,6 @@ export class PdfView {
     }
     this.task?.destroy();
     this.scrollEl?.remove();
+    this.pageTabStrip?.remove();
   }
 }

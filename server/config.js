@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readJsonFile, writeJsonFile, randomId } from './util.js';
+import { ENV_LANGS, autonym, normLang } from './langs.js';
+import { HttpError, readJsonFile, writeJsonFile, randomId } from './util.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT_DIR = path.resolve(here, '..');
@@ -9,6 +10,16 @@ export const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(ROOT_DIR,
 export const PAPERS_DIR = path.join(DATA_DIR, 'papers');
 export const TMP_DIR = path.join(DATA_DIR, 'tmp');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
+// One copy of the code is several apps (instances/*.env, scripts/start.ps1): Sparrow's Nest by
+// default, others with their own name, id, port and data folder.
+export const APP_NAME = (process.env.APP_NAME || '').trim() || "Sparrow's Nest";
+export const APP_ID = (process.env.APP_ID || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+// An id with no letter or digit in it ("밀") would make this app the first one: its sign-in
+// cookie, backups and log.
+if (process.env.APP_ID && !APP_ID) {
+  console.error(`APP_ID "${process.env.APP_ID}" has no letters a-z or digits, so this app would share the first one's sign-in, backups and log. Give it an id of those (instances/<name>.env).`);
+  process.exit(1);
+}
 
 const ACTIONS = ['translate', 'explain', 'ask', 'chat'];
 
@@ -18,7 +29,8 @@ const DEFAULT_PROVIDER = {
   protocol: 'anthropic',
   baseUrl: 'https://api.anthropic.com',
   apiKey: '',
-  model: 'claude-opus-5-5',
+  // "auto": a Haiku router picks Haiku, Sonnet or Opus for each turn (server/llm/router.js).
+  model: 'auto',
   // Only sent to OpenAI-compatible providers, and only when set.
   temperature: null,
   maxTokens: null,
@@ -30,7 +42,8 @@ const PROVIDER_ID_RE = /^[a-z0-9-]{1,40}$/;
 const validProviderId = (id) => typeof id === 'string' && PROVIDER_ID_RE.test(id);
 
 export const DEFAULT_PREFS = {
-  targetLang: '简体中文',
+  // The answer language, a name ("한국어"); '' is the books' target language's own (answerLang).
+  targetLang: '',
   fullTextLimit: 120000,
   preferHtml: true,
   prompts: { translate: '', explain: '', ask: '' },
@@ -73,6 +86,13 @@ function normalize(raw = {}) {
   const llm = normalizeLlm(raw.llm || {});
   const prefs = { ...DEFAULT_PREFS, ...(raw.prefs || {}) };
   prefs.prompts = { ...DEFAULT_PREFS.prompts, ...(raw.prefs?.prompts || {}) };
+  if (prefs.langs) {
+    try {
+      prefs.langs = checkLangs(prefs.langs, ENV_LANGS);
+    } catch {
+      delete prefs.langs; // (edited by hand into something unknown: the environment's)
+    }
+  }
   return {
     secret: raw.secret || crypto.randomBytes(32).toString('hex'),
     passwordHash: raw.passwordHash || '',
@@ -144,13 +164,51 @@ function publicProvider({ apiKey, ...rest }) {
   return { ...rest, hasKey: !!apiKey, keyPreview: maskKey(apiKey) };
 }
 
+// ---- book languages --------------------------------------------------------------------------
+
+// The pair a book follows unless it has its own: Settings (prefs.langs), else ENV_LANGS.
+export function defaultLangs() {
+  const own = config?.prefs?.langs || {};
+  return { src: own.src || ENV_LANGS.src, tgt: own.tgt || ENV_LANGS.tgt };
+}
+
+// A book's languages { src, tgt }: its own (meta.langs: set for it, or fixed when a chapter of it was
+// first translated), else the defaults.
+export function bookLangs(meta) {
+  const d = defaultLangs();
+  return { src: meta?.langs?.src || d.src, tgt: meta?.langs?.tgt || d.tgt };
+}
+
+// What answers come in: the language set for them, else the own name of the target language (of a
+// book, or the default one).
+export const answerLang = (tgt = defaultLangs().tgt) => config.prefs.targetLang || autonym(tgt);
+
+// A pair as given ({ src, tgt }, codes; '' or null: the default), checked; an unknown code, or a
+// code that makes both languages the same, is refused.
+export function checkLangs(given, fallback = defaultLangs()) {
+  const out = {};
+  for (const k of ['src', 'tgt']) {
+    const v = given?.[k];
+    if (v == null || v === '') continue;
+    out[k] = normLang(v);
+    if (!out[k]) throw new HttpError(400, 'langs.unknown', { code: String(v).slice(0, 40) });
+  }
+  if (Object.keys(out).length && (out.src || fallback.src) === (out.tgt || fallback.tgt)) throw new HttpError(400, 'langs.same');
+  return out;
+}
+
 export function publicSettings() {
   const { preset, effort, providers } = config.llm;
   return {
     // The provider in use, flattened as before; `providers` lists every saved one.
     llm: { preset, effort, ...publicProvider(providers[preset]) },
     providers: Object.fromEntries(Object.entries(providers).map(([id, p]) => [id, publicProvider(p)])),
-    prefs: config.prefs,
+    // (the answer language in use; `answerFollows`: it is the target language's)
+    prefs: { ...config.prefs, targetLang: answerLang() },
+    answerFollows: !config.prefs.targetLang,
+    // Books' languages: those set in Settings, and those of the environment that stand in for them.
+    langs: defaultLangs(),
+    envLangs: ENV_LANGS,
     passwordFromEnv: !!process.env.PAPERGLOSS_PASSWORD,
   };
 }
@@ -174,6 +232,8 @@ function sameEndpoint(a, b) {
 }
 
 export async function updateSettings(patch = {}) {
+  // (checked before anything changes: a pair refused leaves the settings as they were)
+  const langs = patch.prefs?.langs && typeof patch.prefs.langs === 'object' ? checkLangs(patch.prefs.langs, ENV_LANGS) : null;
   const llm = config.llm;
   if (patch.llm) {
     // Updates one provider (the one named by `preset`, else the current one) and switches to it.
@@ -208,7 +268,10 @@ export async function updateSettings(patch = {}) {
   if (patch.prefs) {
     const p = patch.prefs;
     const prefs = config.prefs;
-    if (typeof p.targetLang === 'string' && p.targetLang.trim()) prefs.targetLang = p.targetLang.trim().slice(0, 40);
+    // ('' answers in the books' target language)
+    if (typeof p.targetLang === 'string') prefs.targetLang = p.targetLang.trim().slice(0, 40);
+    if (langs && Object.keys(langs).length) prefs.langs = langs;
+    else if (langs) delete prefs.langs;
     if ('fullTextLimit' in p) {
       const n = Math.round(Number(p.fullTextLimit));
       if (Number.isFinite(n)) prefs.fullTextLimit = Math.min(2_000_000, Math.max(5000, n));
