@@ -1,6 +1,6 @@
 # Notes for contributors (and coding agents)
 
-Sparrow's Nest: a self-hosted reader for books in one language with help in another, built on
+Interactive Document Translator: a self-hosted reader for books in one language with help in another, built on
 PaperGloss (paper mode). `README.md` covers running it; `docs/DESIGN.md` covers how book mode works.
 
 - **Run** `npm ci`, then `npm start` (port 8787) or `npm test`. Tests use an Anthropic stub and

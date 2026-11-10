@@ -1,12 +1,10 @@
-<p align="center"><img src="public/icons/nest.svg" width="72" alt=""></p>
+<h1 align="center">Interactive Document Translator</h1>
 
-<h1 align="center">Sparrow's Nest</h1>
-
-<p align="center">A self-hosted reader for books in one language, with help in another — and for research papers.</p>
+<p align="center">Read a book, a web page or a paper in one language with help in another: side-by-side translation, a tapped clause shown in the other language, and any word or passage explained in context. Self-hosted.</p>
 
 <p align="center">English · <a href="README.zh-CN.md">简体中文 (PaperGloss, the upstream project)</a></p>
 
-Sparrow's Nest is a fork of **[PaperGloss](https://github.com/shenyizg/papergloss)** by shenyizg (MIT), a web app for reading research papers on a phone with an LLM at hand. Everything PaperGloss does is still here ([Paper mode](#paper-mode-from-papergloss)); this fork adds **book mode**: read a book written in one language (the *source* language) with help in yours (the *target* language). English → Korean is the default and the pair the prompts were written and tuned for; any other pair of languages can be chosen.
+Interactive Document Translator is a fork of **[PaperGloss](https://github.com/shenyizg/papergloss)** by shenyizg (MIT), a web app for reading research papers on a phone with an LLM at hand. Everything PaperGloss does is still here ([Paper mode](#paper-mode-from-papergloss)); this fork adds **book mode**: read a book written in one language (the *source* language) with help in yours (the *target* language). English → Korean is the default and the pair the prompts were written and tuned for; any other pair of languages can be chosen.
 
 ![A chapter read side by side, the English original and its Korean translation, footnote markers in both](docs/screenshots/book-side-by-side.png)
 
@@ -116,7 +114,7 @@ Open <http://localhost:8787>. On first start the server prints a generated acces
 | `LOG_FILE` | The server's log: everything it prints, including each failed model call and its retries. Kept to about 2 MB plus the one before it (`server.log.1`); `off` turns it off. Another app's (`APP_ID`) has its id in its name: `server-<id>.log` | `~/.config/eng-reader/server.log` |
 | `BACKUP_DIR` | Automatic backups: at startup and every hour, when something changed, a copy of every `.json`/`.jsonl` file in the data folder (highlights, AI threads, translations, metadata, usage) in `auto/<YYYYMMDD-HHMMSS>/`; the newest 48 are kept, and the newest of each day for 30 days. PDFs, pages, pictures and `config.json` are left out. `off` turns it off | `~/eng-reader-backups` |
 | `FORCE_START=1` | Start even though another server's heartbeat in `data/server.lock` is recent | — |
-| `APP_ID` / `APP_NAME` | Another app of the same code (see [Several apps from one copy](#several-apps-from-one-copy)) | — / `Sparrow's Nest` |
+| `APP_ID` / `APP_NAME` | Another app of the same code (see [Several apps from one copy](#several-apps-from-one-copy)) | — / `Interactive Document Translator` |
 
 Everything else (provider, model, languages, answer language, prompts, interface language) is set in the app.
 
@@ -181,15 +179,15 @@ To keep a desktop serving, turn off sleep while it is plugged in.
 
 ## Several apps from one copy
 
-The same code can run as several apps, each with its own name, sign-in cookie, port, data folder, backups and log. The default one is Sparrow's Nest (`data/`). Another is a file `instances/<name>.env` with `APP_ID`, `APP_NAME`, `PORT` and `DATA_DIR` (no secrets: those stay in the env file above), for example `instances/mill.env`:
+The same code can run as several apps, each with its own name, sign-in cookie, port, data folder, backups and log. The default one is Interactive Document Translator (`data/`). Another is a file `instances/<name>.env` with `APP_ID`, `APP_NAME`, `PORT` and `DATA_DIR` (no secrets: those stay in the env file above), for example `instances/papers.env`:
 
 ```bash
-APP_NAME="Sparrow's Mill"
+APP_NAME="Paper Reader"
 PORT=8788
-DATA_DIR=data-mill
+DATA_DIR=data-papers
 ```
 
-Start it with `scripts/start.sh mill` (`scripts\start.ps1 mill`), or have it start at sign-in with `scripts\autostart.ps1 mill`. Its id is its name unless the file gives one, and the start scripts refuse a file without a `DATA_DIR` of its own. An app finds its icons as `public/icons/<id>.svg` (and `-192.png`, `-512.png`, `-touch.png`); without them it has the default ones. Two apps can serve readers of different languages from one copy: give each its own `BOOK_SOURCE_LANG` / `BOOK_TARGET_LANG`.
+Start it with `scripts/start.sh papers` (`scripts\start.ps1 papers`), or have it start at sign-in with `scripts\autostart.ps1 papers`. Its id is its name unless the file gives one, and the start scripts refuse a file without a `DATA_DIR` of its own. An app finds its icons as `public/icons/<id>.svg` (and `-192.png`, `-512.png`, `-touch.png`); without them it has the default ones. Two apps can serve readers of different languages from one copy: give each its own `BOOK_SOURCE_LANG` / `BOOK_TARGET_LANG`.
 
 ## Privacy and security
 
@@ -272,4 +270,4 @@ There is no build step: edit the files under `public/` and reload the page; rest
 
 [MIT](LICENSE). Bundled third-party code is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Sparrow's Nest is built on [PaperGloss](https://github.com/shenyizg/papergloss) by shenyizg; its first three commits in this repository are PaperGloss's, unchanged. The PaperGloss screenshots show *Mixtral of Experts* (Jiang et al., [arXiv:2401.04088](https://arxiv.org/abs/2401.04088), CC BY 4.0), with answers from a demo model. The test fixtures are public-domain texts: Spurgeon's *John Ploughman's Talk* (1896 edition, OCR of a Google Books scan) and Matthew Henry's *Commentary* (from CCEL).
+Interactive Document Translator is built on [PaperGloss](https://github.com/shenyizg/papergloss) by shenyizg; its first three commits in this repository are PaperGloss's, unchanged. The PaperGloss screenshots show *Mixtral of Experts* (Jiang et al., [arXiv:2401.04088](https://arxiv.org/abs/2401.04088), CC BY 4.0), with answers from a demo model. The test fixtures are public-domain texts: Spurgeon's *John Ploughman's Talk* (1896 edition, OCR of a Google Books scan) and Matthew Henry's *Commentary* (from CCEL).
