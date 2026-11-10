@@ -30,8 +30,8 @@ export function iconEl(name, size) {
 
 // The app's own logo, as the page names it (server/static.js fills in which app).
 export function appLogo() {
-  const src = document.querySelector('link[rel="icon"]')?.getAttribute('href') || '/icons/nest.svg';
-  return h('img', { class: 'brand-logo', src: src.includes('{{') ? '/icons/nest.svg' : src, alt: '' });
+  const src = document.querySelector('link[rel="icon"]')?.getAttribute('href') || '/icons/app.svg';
+  return h('img', { class: 'brand-logo', src: src.includes('{{') ? '/icons/app.svg' : src, alt: '' });
 }
 
 export function iconButton(name, { title, onClick, className = '' } = {}) {

@@ -10,9 +10,11 @@ export const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(ROOT_DIR,
 export const PAPERS_DIR = path.join(DATA_DIR, 'papers');
 export const TMP_DIR = path.join(DATA_DIR, 'tmp');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
-// One copy of the code is several apps (instances/*.env, scripts/start.ps1): Sparrow's Nest by
-// default, others with their own name, id, port and data folder.
-export const APP_NAME = (process.env.APP_NAME || '').trim() || "Sparrow's Nest";
+// One copy of the code is several apps (instances/*.env, scripts/start.ps1): Interactive Document
+// Translator by default, others with their own name, id, port and data folder.
+export const APP_NAME = (process.env.APP_NAME || '').trim() || 'Interactive Document Translator';
+// The name under its icon on a home screen: the default one's is shortened, another app's is its name.
+export const APP_SHORT_NAME = (process.env.APP_NAME || '').trim() ? APP_NAME : 'Doc Translator';
 export const APP_ID = (process.env.APP_ID || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 // An id with no letter or digit in it ("밀") would make this app the first one: its sign-in
 // cookie, backups and log.

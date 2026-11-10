@@ -830,7 +830,7 @@ select.input {
   font-size: 17px;
   letter-spacing: 0.01em;
 }
-/* the app's own logo (ui.js appLogo): a sparrow in its nest, or at the mill */
+/* the app's own logo (ui.js appLogo): two pages, "A" and "文" (scripts/logos.py) */
 .brand-logo {
   display: block;
   width: 34px;

@@ -1,5 +1,5 @@
 // The server's console output also goes to a file, since the Windows scheduled task throws the
-// console away: ~/.config/eng-reader/server.log, beside the env file and outside the synced data
+// console away: ~/.config/interactive-document-translator/server.log, beside the env file and outside the synced data
 // folder. Kept to about 2 MB plus the one before it (server.log.1). LOG_FILE moves it; LOG_FILE=off
 // turns it off. Another app of the same code (APP_ID, config.js) writes server-<APP_ID>.log beside
 // it, wherever that is (LOG_FILE=/x/eng.log: /x/eng-<APP_ID>.log), so two apps never share one.
@@ -13,7 +13,7 @@ const MAX = 2 * 1024 * 1024;
 const setting = process.env.LOG_FILE;
 // (as config.js reads it; that module comes after this one)
 const app = (process.env.APP_ID || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const { dir, name, ext } = path.parse(path.resolve(setting || path.join(os.homedir(), '.config', 'eng-reader', 'server.log')));
+const { dir, name, ext } = path.parse(path.resolve(setting || path.join(os.homedir(), '.config', 'interactive-document-translator', 'server.log')));
 const file = setting === 'off' ? null : path.join(dir, `${name}${app ? `-${app}` : ''}${ext}`);
 
 // A log that can't be written must never stop the server. Owner-only: it may name books and

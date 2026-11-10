@@ -373,7 +373,7 @@ export async function mergeChapters(id, first, last, title) {
 // fails is passed over (a missing tool still stops it). `ocr`: tesseract's language, else English.
 async function readPages(file, count, sizes, outputs, onPage, skip = false, ocr = null) {
   // Scratch images stay out of the synced data folder.
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'eng-reader-ocr-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'interactive-document-translator-ocr-'));
   let next = 0;
   let failed = false;
   const worker = async () => {

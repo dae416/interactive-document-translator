@@ -1,6 +1,6 @@
 // Local snapshots of the data folder's JSON (annotations, threads, metadata, books, raw OCR text,
 // translations, usage), so a sync conflict or a bad write can't take what was marked, asked or
-// paid for: ~/eng-reader-backups/auto/<YYYYMMDD-HHMMSS>/, at startup and every hour, only when
+// paid for: ~/interactive-document-translator-backups/auto/<YYYYMMDD-HHMMSS>/, at startup and every hour, only when
 // something changed; the newest 48 are kept, and the newest of each day for 30 days. BACKUP_DIR
 // moves the base; BACKUP_DIR=off turns it off. Another app (APP_ID, config.js) keeps its own in
 // <base>/<APP_ID>/auto, so that one app never prunes the other's. PDFs, pages and pictures are
@@ -95,7 +95,7 @@ export async function snapshot(dataDir, base, now = new Date()) {
 export function startBackups(dataDir) {
   const setting = process.env.BACKUP_DIR;
   if (setting === 'off') return;
-  const base = path.resolve(setting || path.join(os.homedir(), 'eng-reader-backups'), APP_ID);
+  const base = path.resolve(setting || path.join(os.homedir(), 'interactive-document-translator-backups'), APP_ID);
   let busy = false;
   const take = async () => {
     if (busy) return;

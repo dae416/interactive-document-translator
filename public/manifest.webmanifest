@@ -1,7 +1,7 @@
 {
   "name": "{{APP_NAME}}",
-  "short_name": "{{APP_NAME}}",
-  "description": "A web-based, AI-powered paper reader built for mobile",
+  "short_name": "{{APP_SHORT_NAME}}",
+  "description": "An interactive tool for reading and translating documents",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -1,8 +1,8 @@
 {
-  "name": "eng-reader",
+  "name": "interactive-document-translator",
   "version": "0.1.0",
   "private": true,
-  "description": "A self-hosted reader for books in one language with help in another, and for research papers (a fork of PaperGloss)",
+  "description": "An interactive tool for reading and translating documents: books in one language with help in another, and research papers (a fork of PaperGloss)",
   "keywords": [
     "book-reader",
     "paper-reader",

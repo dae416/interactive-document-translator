@@ -185,27 +185,29 @@ test('parallel guesses cannot get past the limit', async () => {
 });
 
 test('another app of the same code has its own name, icons, sign-in cookie and backups; the first keeps its own', async () => {
-  const mill = await startServer({ env: { PAPERGLOSS_PASSWORD: PW, APP_ID: 'mill', APP_NAME: "Sparrow's Mill" } });
-  const nest = await startServer({ env: { PAPERGLOSS_PASSWORD: PW } });
+  const work = await startServer({ env: { PAPERGLOSS_PASSWORD: PW, APP_ID: 'work', APP_NAME: 'Document Translator (work)' } });
+  const first = await startServer({ env: { PAPERGLOSS_PASSWORD: PW } });
   try {
-    for (const [srv, name, icon, cookie, backups] of [
-      [mill, "Sparrow's Mill", 'mill', /^pr_session_mill=/, ['mill', 'auto']],
-      [nest, "Sparrow's Nest", 'nest', /^pr_session=/, ['auto']],
+    // (the first app's name is shortened under its icon; another app's is the name it was given)
+    for (const [srv, name, short, icon, cookie, backups] of [
+      [work, 'Document Translator (work)', 'Document Translator (work)', 'work', /^pr_session_work=/, ['work', 'auto']],
+      [first, 'Interactive Document Translator', 'Doc Translator', 'app', /^pr_session=/, ['auto']],
     ]) {
       const page = await (await fetch(`${srv.url}/`)).text();
       assert.ok(page.includes(`<title>${name}</title>`) && page.includes(`<meta name="application-name" content="${name}" />`));
+      assert.ok(page.includes(`<meta name="apple-mobile-web-app-title" content="${short}" />`));
       assert.ok(page.includes(`href="/icons/${icon}.svg"`) && page.includes(`href="/icons/${icon}-touch.png"`));
       assert.ok(!page.includes('{{'));
       const manifest = await (await fetch(`${srv.url}/manifest.webmanifest`)).json();
-      assert.deepEqual([manifest.name, manifest.short_name], [name, name]);
+      assert.deepEqual([manifest.name, manifest.short_name], [name, short]);
       for (const { src } of manifest.icons) assert.equal((await fetch(`${srv.url}${src}`)).status, 200, src);
       assert.ok(manifest.icons.every(({ src }) => src.startsWith(`/icons/${icon}`)));
       assert.match(await signIn(srv.url, PW), cookie);
       assert.ok(await waitFor(() => fs.existsSync(path.join(srv.backupDir, ...backups)), 10000));
-      assert.match(srv.output(), new RegExp(`${name} is running`));
+      assert.ok(srv.output().includes(`${name} is running`));
     }
   } finally {
-    await mill.stop();
-    await nest.stop();
+    await work.stop();
+    await first.stop();
   }
 });

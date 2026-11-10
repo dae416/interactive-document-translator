@@ -40,7 +40,7 @@ test("on one machine too: a heartbeat whose process still runs keeps a second se
     fs.rmSync(lock, { force: true });
     const first = await startServer({ dataDir: dir, env: { PAPERGLOSS_PASSWORD: PW } });
     try {
-      await assert.rejects(startServer({ dataDir: dir, env: { PAPERGLOSS_PASSWORD: PW, APP_ID: 'mill', PAPERGLOSS_LOOP: 'its-own' } }), new RegExp(`pid ${first.pid}\\) is using`));
+      await assert.rejects(startServer({ dataDir: dir, env: { PAPERGLOSS_PASSWORD: PW, APP_ID: 'work', PAPERGLOSS_LOOP: 'its-own' } }), new RegExp(`pid ${first.pid}\\) is using`));
       assert.equal(holder(), first.pid, 'the first keeps it');
     } finally {
       await first.stop();
@@ -55,11 +55,11 @@ test("on one machine too: a heartbeat whose process still runs keeps a second se
 // file is `shared` (never the real one).
 function layout(instances, shared) {
   const dir = tempDir();
-  for (const sub of ['scripts', 'instances', 'server', 'public', 'data', path.join('home', '.config', 'eng-reader')]) fs.mkdirSync(path.join(dir, sub), { recursive: true });
+  for (const sub of ['scripts', 'instances', 'server', 'public', 'data', path.join('home', '.config', 'interactive-document-translator')]) fs.mkdirSync(path.join(dir, sub), { recursive: true });
   for (const name of ['start.sh', 'start.ps1']) fs.copyFileSync(path.join(ROOT, 'scripts', name), path.join(dir, 'scripts', name));
   fs.writeFileSync(path.join(dir, 'server', 'index.js'), 'console.log(JSON.stringify([process.env.APP_ID ?? null, process.env.DATA_DIR ?? null]));\n');
   fs.writeFileSync(path.join(dir, 'public', 'index.html'), '<!doctype html>\n');
-  fs.writeFileSync(path.join(dir, 'home', '.config', 'eng-reader', 'env'), shared);
+  fs.writeFileSync(path.join(dir, 'home', '.config', 'interactive-document-translator', 'env'), shared);
   for (const [name, text] of Object.entries(instances)) fs.writeFileSync(path.join(dir, 'instances', `${name}.env`), text);
   return dir;
 }
@@ -84,12 +84,12 @@ for (const [script, skip, run] of SCRIPTS) {
   test(`${script}: another app's id is its name unless its file gives one, never the first app's; one without a data folder of its own is refused`, { skip }, (t) => {
     const dir = layout(
       {
-        mill: 'APP_NAME="Sparrow\'s Mill"\nPORT=8788\nDATA_DIR=data-mill\n',
+        work: 'APP_NAME="Document Translator (work)"\nPORT=8788\nDATA_DIR=data-work\n',
         grain: 'APP_ID=grain\nDATA_DIR=data-grain\n',
         nodata: 'APP_NAME=Nothing\n',
         same: 'DATA_DIR=./data/\n',
       },
-      'APP_ID=nest\nDATA_DIR=data\nPORT=8787\n',
+      'APP_ID=main\nDATA_DIR=data\nPORT=8787\n',
     );
     // What the server was given ([APP_ID, DATA_DIR]), or why it was not started.
     const said = (name) => {
@@ -97,16 +97,16 @@ for (const [script, skip, run] of SCRIPTS) {
       return r.status === 0 ? JSON.parse(r.stdout.trim().split('\n').at(-1)) : `${r.status}: ${(r.stderr || '').trim()}`;
     };
     try {
-      const mill = said('mill');
-      if (/running scripts is disabled|cannot be loaded/i.test(String(mill))) return t.skip('scripts may not run here (execution policy)');
-      assert.deepEqual(mill, ['mill', 'data-mill']);
+      const work = said('work');
+      if (/running scripts is disabled|cannot be loaded/i.test(String(work))) return t.skip('scripts may not run here (execution policy)');
+      assert.deepEqual(work, ['work', 'data-work']);
       assert.deepEqual(said('grain'), ['grain', 'data-grain']);
-      assert.deepEqual(said(''), ['nest', 'data'], 'the first app as before');
+      assert.deepEqual(said(''), ['main', 'data'], 'the first app as before');
       assert.match(said('nodata'), /^1: The nodata app needs a data folder of its own: set DATA_DIR in instances.nodata\.env \(data is the first app's\)\.$/);
       assert.match(said('same'), /^1: The same app needs a data folder of its own/);
       assert.match(said('none'), /^1: No app named 'none'/);
-      assert.match(said('../mill'), script === 'start.sh' ? /^1: '\.\.\/mill' is no app's name: a name is lowercase letters and digits/ : /^1: No app named '\.\.\/mill'/);
-      assert.ok(fs.existsSync(path.join(dir, 'data-mill', 'tmp')), 'its own folder made ready');
+      assert.match(said('../work'), script === 'start.sh' ? /^1: '\.\.\/work' is no app's name: a name is lowercase letters and digits/ : /^1: No app named '\.\.\/work'/);
+      assert.ok(fs.existsSync(path.join(dir, 'data-work', 'tmp')), 'its own folder made ready');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

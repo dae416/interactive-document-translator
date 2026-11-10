@@ -22,7 +22,7 @@ test('the instant cache key changes with chapter, context, language and prompt',
 });
 
 test('mode: word, sentence or paragraph', () => {
-  assert.equal(bookMode('sparrow'), 'word');
+  assert.equal(bookMode('plough'), 'word');
   assert.equal(bookMode(' idle hands '), 'word');
   assert.equal(bookMode('He that will not plough must not expect to eat.'), 'sentence');
   assert.equal(bookMode('Read Hos. viii. 12 again, and you shall see it.'), 'sentence');

@@ -1,8 +1,8 @@
 #!/bin/sh
 # Starts the server from the repo this script belongs to, wherever that folder has moved.
-# Settings come from ~/.config/eng-reader/env (ANTHROPIC_API_KEY, PAPERGLOSS_PASSWORD, PORT,
+# Settings come from ~/.config/interactive-document-translator/env (ANTHROPIC_API_KEY, PAPERGLOSS_PASSWORD, PORT,
 # HOST, DATA_DIR). Refuses to start on online-only placeholders of a cloud-synced folder.
-# With an instance name ("start.sh mill"), it starts that other app of this code instead.
+# With an instance name ("start.sh work"), it starts that other app of this code instead.
 set -eu
 cd "$(dirname "$0")/.."
 instance="${1:-}"
@@ -10,9 +10,9 @@ instance="${1:-}"
 # launchd and systemd start with a bare PATH; Homebrew keeps node, poppler and tesseract here.
 PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
-if [ -f "$HOME/.config/eng-reader/env" ]; then
+if [ -f "$HOME/.config/interactive-document-translator/env" ]; then
   set -a
-  . "$HOME/.config/eng-reader/env"
+  . "$HOME/.config/interactive-document-translator/env"
   set +a
 fi
 # Another app of this code: its name, id, port and data folder (instances/<name>.env, no secrets)

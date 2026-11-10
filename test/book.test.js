@@ -68,7 +68,7 @@ test('a scanned book: 24 chapters between the front matter and the publisher’s
   assert.ok(!/^(\(\d+\)|3 \(33\))$/m.test(all), 'folios are gone');
   const idle = textOf(byTitle['To the Idle']);
   assert.ok(idle.includes('one might as well try to fatten a greyhound'), 'paragraphs run on across pages');
-  assert.ok(idle.includes('a man doing mischief is a sparrow picking the corn'), 'hyphenated line ends are joined');
+  assert.ok(idle.includes('the biggest pair of spectacles in the parish'), 'hyphenated line ends are joined');
   assert.ok(textOf(byTitle['On Religious Grumblers']).includes('His ignorance is the mother of his impudence'));
   for (const c of chapters) for (const b of c.blocks) assert.equal(b.x, b.x.replace(/\s+/g, ' ').trim());
   // Windows line ends change nothing.

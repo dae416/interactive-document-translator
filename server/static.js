@@ -2,15 +2,15 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { APP_ID, APP_NAME, ROOT_DIR } from './config.js';
+import { APP_ID, APP_NAME, APP_SHORT_NAME, ROOT_DIR } from './config.js';
 import { attr, sendFile } from './util.js';
 
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
-// The page and the manifest get the app's name ({{APP_NAME}}) and icons ({{APP_ICON}}:
-// public/icons/<id>.svg, -192, -512 and -touch.png) as they are sent: one public/ serves every app
-// (config.js). An app without icons of its own has the first one's.
+// The page and the manifest get the app's name ({{APP_NAME}}, {{APP_SHORT_NAME}}) and icons
+// ({{APP_ICON}}: public/icons/<id>.svg, -192, -512 and -touch.png) as they are sent: one public/
+// serves every app (config.js). An app without icons of its own has the first one's (app.svg, …).
 const NAMED = new Set([path.join(PUBLIC_DIR, 'index.html'), path.join(PUBLIC_DIR, 'manifest.webmanifest')]);
-const APP_ICON = APP_ID && fs.existsSync(path.join(PUBLIC_DIR, 'icons', `${APP_ID}.svg`)) ? APP_ID : 'nest';
+const APP_ICON = APP_ID && fs.existsSync(path.join(PUBLIC_DIR, 'icons', `${APP_ID}.svg`)) ? APP_ID : 'app';
 const NM = path.join(ROOT_DIR, 'node_modules');
 
 // URL prefix -> directory on disk. Order matters: first match wins.
@@ -109,8 +109,9 @@ export async function serveStatic(req, res, urlPath) {
     headers['Referrer-Policy'] = 'no-referrer';
   }
   if (NAMED.has(resolved.file)) {
-    const name = ext === '.html' ? attr(APP_NAME) : JSON.stringify(APP_NAME).slice(1, -1);
-    const body = Buffer.from((await fsp.readFile(resolved.file, 'utf8')).replaceAll('{{APP_NAME}}', name).replaceAll('{{APP_ICON}}', APP_ICON));
+    const named = (s) => (ext === '.html' ? attr(s) : JSON.stringify(s).slice(1, -1));
+    const text = await fsp.readFile(resolved.file, 'utf8');
+    const body = Buffer.from(text.replaceAll('{{APP_NAME}}', named(APP_NAME)).replaceAll('{{APP_SHORT_NAME}}', named(APP_SHORT_NAME)).replaceAll('{{APP_ICON}}', APP_ICON));
     delete headers['Last-Modified'];
     headers['Content-Length'] = body.length;
     res.writeHead(200, headers);

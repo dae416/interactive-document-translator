@@ -4,11 +4,13 @@
 
 <p align="center">Web 端 AI 驱动的移动论文阅读器。</p>
 
-<p align="center"><a href="README.md">English</a> · 简体中文</p>
+<p align="center"><a href="README.md">English</a> · <a href="README.es.md">Español</a> · 简体中文 (PaperGloss, the upstream project)</p>
 
 > **说明：** 这是上游项目 [PaperGloss](https://github.com/shenyizg/papergloss) 的中文说明，原样保留，只介绍论文模式。本仓库（Interactive Document Translator）在它之上增加了书籍模式：用一种语言读书，用另一种语言获得帮助（默认英文书、韩文帮助，可在设置里换成任意语言对），见英文 [README](README.md)。下文的克隆地址、安装步骤和配置项以英文 README 为准。
 >
 > *This is upstream PaperGloss's Chinese README, kept as it was; it covers paper mode only. For book mode and this fork's setup, see the English [README](README.md).*
+
+本仓库自己的说明：[README.md](README.md)（英文）· [README.es.md](README.es.md)（西班牙文）
 
 ![PaperGloss 在手机上：论文库、选中文字、AI 翻译和解释](docs/screenshots/mobile-zh.png)
 

@@ -2,13 +2,39 @@
 
 <p align="center">Read a book, a web page or a paper in one language with help in another: side-by-side translation, a tapped clause shown in the other language, and any word or passage explained in context. Self-hosted.</p>
 
-<p align="center">English · <a href="README.zh-CN.md">简体中文 (PaperGloss, the upstream project)</a></p>
+<p align="center">English · <a href="README.es.md">Español</a> · <a href="README.zh-CN.md">简体中文 (PaperGloss, the upstream project)</a></p>
+
+![The library: four public-domain books, in English, Japanese, Chinese and Spanish, each read with help in another language](docs/screenshots/library.png)
 
 Interactive Document Translator is a fork of **[PaperGloss](https://github.com/shenyizg/papergloss)** by shenyizg (MIT), a web app for reading research papers on a phone with an LLM at hand. Everything PaperGloss does is still here ([Paper mode](#paper-mode-from-papergloss)); this fork adds **book mode**: read a book written in one language (the *source* language) with help in yours (the *target* language). English → Korean is the default and the pair the prompts were written and tuned for; any other pair of languages can be chosen.
 
+## Examples
+
+Each of these is a short public-domain text, imported as a `.txt` file, given its two languages in the book's ⋯ menu (**Languages**) and translated with the chapter's **Translate** button, then read side by side.
+
+### English → Korean
+
 ![A chapter read side by side, the English original and its Korean translation, footnote markers in both](docs/screenshots/book-side-by-side.png)
 
-Side by side (`KO+EN`): the opening of *Alice's Adventures in Wonderland* (Lewis Carroll, 1865; public domain) and its Korean translation, with footnote markers in both.
+*Alice's Adventures in Wonderland*, Lewis Carroll, 1865 (public domain): the opening of chapter I beside its Korean translation (`KO+EN`), footnote markers in both.
+
+### Japanese → English
+
+![A Japanese story read side by side with its English translation](docs/screenshots/book-other-pair.png)
+
+「蜘蛛の糸」 (*The Spider's Thread*), Akutagawa Ryūnosuke, 1918 (public domain): the opening beside its English translation (`EN+JA`), the translation's footnotes marked in both.
+
+### Chinese → English
+
+![The opening of a Chinese story read side by side with its English translation](docs/screenshots/book-zh-en.png)
+
+《孔乙己》 (*Kong Yiji*), Lu Xun, 1919 (public domain): the opening paragraphs beside their English translation (`EN+ZH-HANS`), the translation's footnotes marked in both.
+
+### Spanish → Korean
+
+![The opening of a Spanish novel read side by side with its Korean translation](docs/screenshots/book-es-ko.png)
+
+*Don Quijote de la Mancha*, Miguel de Cervantes, 1605 (public domain): the first paragraph of Part I, chapter I, beside its Korean translation (`KO+ES`), the translation's footnotes marked in both.
 
 ## Book mode
 
@@ -47,17 +73,13 @@ Languages are BCP-47 codes: `en`, `ko`, `ja`, `zh-Hans`, `zh-Hant`, `fr`, `de`, 
 
 A book keeps the pair it was first translated with, so changing Settings later leaves its translations as they are; from then on its own language can still be corrected in its menu, but not the language it is translated into. Answers come in the target language too (its own name, such as "Español" or "日本語"), unless **Settings → Translate into / answer in** names another.
 
-The prompts name the two languages ("You translate Japanese books into English for an English middle-school student…"); for English → Korean they are byte for byte what they were before other pairs existed. What a prompt says about a target language beyond its name — Korean's loanword spelling, its Protestant names for Bible books, its word spacing — lives in one table (`TARGETS` in `server/langs.js`), where another language's conventions can be added. Sentence and clause splitting know the full stops and commas of Chinese and Japanese and that they put no spaces between words.
+The prompts name the two languages ("You translate Japanese books into English for an English middle-school student…"); for English → Korean they are byte for byte what they were before other pairs existed. What a prompt says about a target language beyond its name — Korean's loanword spelling, its Protestant names for Bible books, its word spacing — lives in one table (`TARGETS` in `server/langs.js`), where another language's conventions can be added. Sentence and clause splitting know the full stops and commas of Chinese and Japanese and that they put no spaces between words. [Examples](#examples) shows three other pairs.
 
-![A Japanese story read side by side with its English translation](docs/screenshots/book-other-pair.png)
-
-Japanese → English, side by side (`EN+JA`): the opening of 「蜘蛛の糸」 (*The Spider's Thread*, Akutagawa Ryūnosuke, 1918; public domain), with the translation's footnotes marked in both.
-
-Honest notes on other pairs: the prompts were first written for English → Korean; other pairs use the same prompts with the languages named and have been exercised only against a stub in the tests. The clause-pairing examples in the prompt stay English → Korean for every pair. A scanned book not in English is OCR'd in its language when tesseract has that language's data installed (for example `tesseract-ocr-fra`, or the Windows installer's language options), and as English otherwise, with a warning in the log. Where both languages are written in the same script (English and Spanish, say), a chapter already in the target language can't be told from one that needs translating.
+Honest notes on other pairs: the prompts were first written for English → Korean; other pairs use the same prompts with the languages named and have been exercised against a stub in the tests and, with the real model, only on the short texts in [Examples](#examples). The clause-pairing examples in the prompt stay English → Korean for every pair. A scanned book not in English is OCR'd in its language when tesseract has that language's data installed (for example `tesseract-ocr-fra`, or the Windows installer's language options), and as English otherwise, with a warning in the log. Where both languages are written in the same script (English and Spanish, say), a chapter already in the target language can't be told from one that needs translating.
 
 ### What it costs
 
-Translation is the expensive part. With Claude Opus at max effort (plus the review), an English → Korean chapter costs about **$0.55–0.6 per 1,000 characters** of the original, nearly all of it thinking; the button's estimate uses $0.65 to err high, and a chapter estimated over $5 is translated in parts of at most $5 each. Other languages cost differently per character (a character of Chinese or Japanese says more than one of English). With `TRANSLATE_AUTO=1` each book's introduction and chapter 1 are translated by themselves; otherwise only the buttons spend. Answers to selections go to Haiku, Sonnet or Opus as the router picks (or the model you set), with the book's brief, summaries and chapter cached; summaries and the brief are written once per book with Haiku. Every model call is logged in `data/usage.jsonl`.
+Translation is the expensive part. With Claude Opus at max effort (plus the review), an English → Korean chapter costs about **$0.55–0.6 per 1,000 characters** of the original, nearly all of it thinking; the button's estimate uses $0.65 to err high, and a chapter estimated over $5 is translated in parts of at most $5 each. Other languages cost differently per character (a character of Chinese or Japanese says more than one of English), and the estimate can fall short: of the [Examples](#examples), the Chinese opening (638 characters) cost $0.96 and the Spanish paragraph from 1605 (1,204 characters) $1.85, each over twice its estimate. With `TRANSLATE_AUTO=1` each book's introduction and chapter 1 are translated by themselves; otherwise only the buttons spend. Answers to selections go to Haiku, Sonnet or Opus as the router picks (or the model you set), with the book's brief, summaries and chapter cached; summaries and the brief are written once per book with Haiku. Every model call is logged in `data/usage.jsonl`.
 
 ## Paper mode (from PaperGloss)
 
@@ -85,8 +107,8 @@ The screenshots in this section are PaperGloss's and show paper mode.
 Requires Node.js 20 or later; PDF books also need poppler (`pdftotext`, `pdftoppm`) and tesseract on PATH (`brew install poppler tesseract`, `sudo apt install poppler-utils tesseract-ocr`, or on Windows `winget install UB-Mannheim.TesseractOCR` and `winget install oschwartz10612.Poppler`).
 
 ```bash
-git clone <this repository> eng-reader
-cd eng-reader
+git clone <this repository> interactive-document-translator
+cd interactive-document-translator
 npm ci
 npm start
 ```
@@ -111,8 +133,8 @@ Open <http://localhost:8787>. On first start the server prints a generated acces
 | `PAPERGLOSS_NO_PROXY=1` | Ignore the proxy variables above | — |
 | `PAPERGLOSS_TRUST_PROXY=1` | Trust `X-Forwarded-*` headers from any peer, for a reverse proxy on another machine or in another container (by default only a proxy on the same machine is trusted) | — |
 | `PAPERGLOSS_ALLOW_PRIVATE_URLS=1` | Allow importing from this machine or the local network (blocked by default) | — |
-| `LOG_FILE` | The server's log: everything it prints, including each failed model call and its retries. Kept to about 2 MB plus the one before it (`server.log.1`); `off` turns it off. Another app's (`APP_ID`) has its id in its name: `server-<id>.log` | `~/.config/eng-reader/server.log` |
-| `BACKUP_DIR` | Automatic backups: at startup and every hour, when something changed, a copy of every `.json`/`.jsonl` file in the data folder (highlights, AI threads, translations, metadata, usage) in `auto/<YYYYMMDD-HHMMSS>/`; the newest 48 are kept, and the newest of each day for 30 days. PDFs, pages, pictures and `config.json` are left out. `off` turns it off | `~/eng-reader-backups` |
+| `LOG_FILE` | The server's log: everything it prints, including each failed model call and its retries. Kept to about 2 MB plus the one before it (`server.log.1`); `off` turns it off. Another app's (`APP_ID`) has its id in its name: `server-<id>.log` | `~/.config/interactive-document-translator/server.log` |
+| `BACKUP_DIR` | Automatic backups: at startup and every hour, when something changed, a copy of every `.json`/`.jsonl` file in the data folder (highlights, AI threads, translations, metadata, usage) in `auto/<YYYYMMDD-HHMMSS>/`; the newest 48 are kept, and the newest of each day for 30 days. PDFs, pages, pictures and `config.json` are left out. `off` turns it off | `~/interactive-document-translator-backups` |
 | `FORCE_START=1` | Start even though another server's heartbeat in `data/server.lock` is recent | — |
 | `APP_ID` / `APP_NAME` | Another app of the same code (see [Several apps from one copy](#several-apps-from-one-copy)) | — / `Interactive Document Translator` |
 
@@ -146,7 +168,7 @@ The answer language is separate from the interface language (English or Chinese)
 
 ## Running as a service
 
-**Settings** can go in `~/.config/eng-reader/env` (on Windows, `$HOME\.config\eng-reader\env`), outside the project folder:
+**Settings** can go in `~/.config/interactive-document-translator/env` (on Windows, `$HOME\.config\interactive-document-translator\env`), outside the project folder:
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...
@@ -161,33 +183,33 @@ BOOK_TARGET_LANG=ko
 
 **Autostart.** The unit files are the only place with an absolute path. Run the command again from the project folder whenever the folder moves.
 
-- macOS (launchd; `caffeinate -i` in the template keeps the Mac from idle-sleeping while the server runs; logs go to `~/Library/Logs/eng-reader.log`):
+- macOS (launchd; `caffeinate -i` in the template keeps the Mac from idle-sleeping while the server runs; logs go to `~/Library/Logs/interactive-document-translator.log`):
 
   ```bash
-  sed -e "s|@ROOT@|$PWD|g" -e "s|@HOME@|$HOME|g" scripts/eng-reader.plist > ~/Library/LaunchAgents/org.eng-reader.plist && launchctl bootout gui/$(id -u)/org.eng-reader 2>/dev/null; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/org.eng-reader.plist
+  sed -e "s|@ROOT@|$PWD|g" -e "s|@HOME@|$HOME|g" scripts/interactive-document-translator.plist > ~/Library/LaunchAgents/org.interactive-document-translator.plist && launchctl bootout gui/$(id -u)/org.interactive-document-translator 2>/dev/null; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/org.interactive-document-translator.plist
   ```
 
-- Linux (systemd user unit; logs with `journalctl --user -u eng-reader`):
+- Linux (systemd user unit; logs with `journalctl --user -u interactive-document-translator`):
 
   ```bash
-  mkdir -p ~/.config/systemd/user && sed "s|@ROOT@|$PWD|g" scripts/eng-reader.service > ~/.config/systemd/user/eng-reader.service && systemctl --user daemon-reload && systemctl --user enable --now eng-reader && loginctl enable-linger $USER
+  mkdir -p ~/.config/systemd/user && sed "s|@ROOT@|$PWD|g" scripts/interactive-document-translator.service > ~/.config/systemd/user/interactive-document-translator.service && systemctl --user daemon-reload && systemctl --user enable --now interactive-document-translator && loginctl enable-linger $USER
   ```
 
-- Windows: `powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1` registers a Task Scheduler task, `eng-reader`, that runs `start.ps1` without a window whenever you sign in. `Stop-ScheduledTask eng-reader` stops it. Run the script again after the folder moves.
+- Windows: `powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1` registers a Task Scheduler task, `interactive-document-translator`, that runs `start.ps1` without a window whenever you sign in. `Stop-ScheduledTask interactive-document-translator` stops it. Run the script again after the folder moves.
 
 To keep a desktop serving, turn off sleep while it is plugged in.
 
 ## Several apps from one copy
 
-The same code can run as several apps, each with its own name, sign-in cookie, port, data folder, backups and log. The default one is Interactive Document Translator (`data/`). Another is a file `instances/<name>.env` with `APP_ID`, `APP_NAME`, `PORT` and `DATA_DIR` (no secrets: those stay in the env file above), for example `instances/papers.env`:
+The same code can run as several apps, each with its own name, sign-in cookie, port, data folder, backups and log. The default one is Interactive Document Translator (`data/`). Another is a file `instances/<name>.env` with `APP_ID`, `APP_NAME`, `PORT` and `DATA_DIR` (no secrets: those stay in the env file above), for example `instances/work.env`:
 
 ```bash
-APP_NAME="Paper Reader"
+APP_NAME="Document Translator (work)"
 PORT=8788
-DATA_DIR=data-papers
+DATA_DIR=data-work
 ```
 
-Start it with `scripts/start.sh papers` (`scripts\start.ps1 papers`), or have it start at sign-in with `scripts\autostart.ps1 papers`. Its id is its name unless the file gives one, and the start scripts refuse a file without a `DATA_DIR` of its own. An app finds its icons as `public/icons/<id>.svg` (and `-192.png`, `-512.png`, `-touch.png`); without them it has the default ones. Two apps can serve readers of different languages from one copy: give each its own `BOOK_SOURCE_LANG` / `BOOK_TARGET_LANG`.
+Start it with `scripts/start.sh work` (`scripts\start.ps1 work`), or have it start at sign-in with `scripts\autostart.ps1 work`. Its id is its name unless the file gives one, and the start scripts refuse a file without a `DATA_DIR` of its own. An app finds its icons as `public/icons/<id>.svg` (and `-192.png`, `-512.png`, `-touch.png`); without them it has the default ones (`public/icons/app.svg` and so on). `scripts/logos.py` draws both sets, the default in blue and `work` in orange; add a colour there for another app. On a phone's home screen the default app is called "Doc Translator", another app by its `APP_NAME`. Two apps can serve readers of different languages from one copy: give each its own `BOOK_SOURCE_LANG` / `BOOK_TARGET_LANG`.
 
 ## Privacy and security
 

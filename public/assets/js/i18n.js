@@ -3,7 +3,7 @@
 
 const DICT = {
   zh: {
-    'app.name': "Sparrow's Nest",
+    'app.name': 'Interactive Document Translator',
     'common.ok': '确定',
     'common.cancel': '取消',
     'common.close': '关闭',
@@ -344,7 +344,7 @@ const DICT = {
   },
 
   en: {
-    'app.name': "Sparrow's Nest",
+    'app.name': 'Interactive Document Translator',
     'common.ok': 'OK',
     'common.cancel': 'Cancel',
     'common.close': 'Close',

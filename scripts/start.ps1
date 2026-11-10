@@ -1,8 +1,8 @@
 # Windows twin of start.sh: starts the server from the repo this script belongs to, wherever
-# that folder has moved. Settings come from $HOME\.config\eng-reader\env (ANTHROPIC_API_KEY,
+# that folder has moved. Settings come from $HOME\.config\interactive-document-translator\env (ANTHROPIC_API_KEY,
 # PAPERGLOSS_PASSWORD, PORT, HOST, DATA_DIR). Refuses to start on online-only placeholders of a
 # cloud-synced folder.
-# With an instance name ("start.ps1 mill"), it starts that other app of this code instead.
+# With an instance name ("start.ps1 work"), it starts that other app of this code instead.
 param([string]$Instance = '')
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path -Parent $PSScriptRoot)
@@ -31,7 +31,7 @@ function Import-EnvFile($file) {
 # A folder's full path, from this repo (.NET's own current folder is elsewhere, as above).
 function Get-FullPath($dir) { [IO.Path]::GetFullPath([IO.Path]::Combine((Get-Location).ProviderPath, $dir)).TrimEnd('\') }
 
-$envFile = [IO.Path]::Combine($HOME, '.config', 'eng-reader', 'env')
+$envFile = [IO.Path]::Combine($HOME, '.config', 'interactive-document-translator', 'env')
 if (Test-Path $envFile) { Import-EnvFile $envFile }
 # Another app of this code: its name, id, port and data folder (instances\<name>.env, no secrets)
 # go over the settings above. Its id (so its sign-in cookie, backups and log) and its data folder

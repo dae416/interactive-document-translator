@@ -1,6 +1,6 @@
 # systemd user unit template: README "Running as a service" fills in @ROOT@.
 [Unit]
-Description=eng-reader
+Description=Interactive Document Translator
 After=network-online.target
 
 [Service]

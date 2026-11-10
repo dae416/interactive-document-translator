@@ -107,7 +107,7 @@ test('the server backs up its data at startup, but not config.json, so a restart
     const [stamp] = fs.readdirSync(auto);
     assert.deepEqual(fs.readdirSync(path.join(auto, stamp)).sort(), ['.signature', 'usage.jsonl']);
     const log = fs.readFileSync(srv.logFile, 'utf8');
-    assert.match(log, /Sparrow's Nest is running/);
+    assert.match(log, /Interactive Document Translator is running/);
     assert.match(log, /\[backup\] /);
     const password = /Generated access password: (\S+)/.exec(srv.output())?.[1];
     assert.ok(password);
@@ -157,11 +157,11 @@ test('the log file is kept to about 2 MB, the one before it beside it, or starte
 test("another app's log has its id in its name, in the default place and where LOG_FILE puts it", () => {
   const dir = tempDir();
   const run = (env) => spawnSync(process.execPath, ['--input-type=module', '-e', "await import('./server/log.js'); console.log('[server] up');"], { cwd: ROOT, env: { ...process.env, LOG_FILE: '', ...env }, encoding: 'utf8' });
-  run({ LOG_FILE: path.join(dir, 'eng.log'), APP_ID: 'mill' });
+  run({ LOG_FILE: path.join(dir, 'eng.log'), APP_ID: 'work' });
   run({ LOG_FILE: path.join(dir, 'eng.log'), APP_ID: '' });
-  assert.deepEqual(fs.readdirSync(dir).sort(), ['eng-mill.log', 'eng.log'], 'two apps never share one');
-  assert.match(fs.readFileSync(path.join(dir, 'eng-mill.log'), 'utf8'), /\[server\] up\n$/);
-  run({ HOME: dir, USERPROFILE: dir, APP_ID: 'mill' });
-  assert.deepEqual(fs.readdirSync(path.join(dir, '.config', 'eng-reader')), ['server-mill.log']);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['eng-work.log', 'eng.log'], 'two apps never share one');
+  assert.match(fs.readFileSync(path.join(dir, 'eng-work.log'), 'utf8'), /\[server\] up\n$/);
+  run({ HOME: dir, USERPROFILE: dir, APP_ID: 'work' });
+  assert.deepEqual(fs.readdirSync(path.join(dir, '.config', 'interactive-document-translator')), ['server-work.log']);
   fs.rmSync(dir, { recursive: true, force: true });
 });

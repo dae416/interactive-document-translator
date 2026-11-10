@@ -1,7 +1,7 @@
 # Registers the Windows task that runs scripts\start.ps1, without a window, whenever you sign in.
 # The task holds this folder's path: run this again after the folder moves. It restarts the
-# server. With an instance name ("autostart.ps1 mill") it registers that other app of this code
-# (instances\<name>.env) as its own task, eng-reader-<name>.
+# server. With an instance name ("autostart.ps1 work") it registers that other app of this code
+# (instances\<name>.env) as its own task, interactive-document-translator-<name>.
 param([string]$Instance = '')
 $ErrorActionPreference = 'Stop'
 if ($Instance -notmatch '^[a-z0-9]*$') { throw "An app's name is lowercase letters and digits (instances\<name>.env)." }
@@ -9,7 +9,7 @@ if ($Instance -notmatch '^[a-z0-9]*$') { throw "An app's name is lowercase lette
 if ($Instance -and -not (Test-Path ([IO.Path]::Combine((Split-Path -Parent $PSScriptRoot), 'instances', "$Instance.env")))) {
   throw "No app named '$Instance': there is no instances\$Instance.env."
 }
-$task = if ($Instance) { "eng-reader-$Instance" } else { 'eng-reader' }
+$task = if ($Instance) { "interactive-document-translator-$Instance" } else { 'interactive-document-translator' }
 $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 $start = Join-Path $PSScriptRoot 'start.ps1'
 # Not powershell -WindowStyle Hidden: Windows 11 shows that in a Windows Terminal window all the
